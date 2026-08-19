@@ -41,6 +41,58 @@ export class EmotionController {
 
 
         // =====================================================
+        // ENQUADRAMENTO ESTÁVEL DA CABEÇA
+        // =====================================================
+
+        this._headFrame = null;
+
+        this._headFrameInitialized = false;
+
+        /*
+         * O tamanho da janela da cabeça é calculado
+         * SOMENTE na primeira detecção.
+         *
+         * Depois disso ele não muda mais.
+         *
+         * Isso evita o efeito de:
+         *
+         * cabeça aumenta
+         * cabeça diminui
+         * cabeça aumenta
+         * cabeça diminui
+         *
+         * que estava acontecendo nas telas.
+         */
+
+        this._headFrameWidthFactor = 2.8;
+
+        this._headFrameHeightFactor = 3.4;
+
+
+        /*
+         * Posição vertical da cabeça dentro do enquadramento.
+         *
+         * 0.56 deixa um pouco mais de espaço acima
+         * da cabeça.
+         */
+
+        this._headFrameVerticalPosition = 0.56;
+
+
+        /*
+         * Suavização do movimento.
+         *
+         * IMPORTANTE:
+         *
+         * suavizamos apenas X e Y.
+         *
+         * width e height permanecem fixos.
+         */
+
+        this._headFrameSmoothing = 0.92;
+
+
+        // =====================================================
         // ESTABILIZAÇÃO DAS EMOÇÕES
         // =====================================================
 
@@ -72,8 +124,6 @@ export class EmotionController {
         this._lastValidMask = null;
 
         this._lastMaskTime = 0;
-
-        this._maskHoldTime = 250;
 
         this._segmentationReady = false;
 
@@ -117,6 +167,7 @@ export class EmotionController {
     async _initSegmentation() {
 
         if (this._segmentation) {
+
             return;
         }
 
@@ -172,9 +223,9 @@ export class EmotionController {
                 }
 
 
-                // =============================================
-                // GUARDA O ÚLTIMO RESULTADO VÁLIDO
-                // =============================================
+                // =================================================
+                // GUARDA MÁSCARA VÁLIDA
+                // =================================================
 
                 this._segmentationMask =
                     results.segmentationMask;
@@ -224,7 +275,7 @@ export class EmotionController {
 
 
         // =====================================================
-        // VIDEO EXISTENTE
+        // USA O VÍDEO EXISTENTE
         // =====================================================
 
         if (existingVideo) {
@@ -237,24 +288,29 @@ export class EmotionController {
             this.video =
                 document.createElement('video');
 
+
             this.video.srcObject =
                 stream;
+
 
             this.video.muted =
                 true;
 
+
             this.video.autoplay =
                 true;
 
+
             this.video.playsInline =
                 true;
+
 
             await this.video.play();
         }
 
 
         // =====================================================
-        // ESPERA A CÂMERA
+        // ESPERA A CÂMERA ESTAR PRONTA
         // =====================================================
 
         await this._waitForVideo();
@@ -280,18 +336,36 @@ export class EmotionController {
         this._maskCanvas.width =
             width;
 
+
         this._maskCanvas.height =
             height;
 
+
         this._personCanvas.width =
             width;
+
 
         this._personCanvas.height =
             height;
 
 
         // =====================================================
-        // CONFIGURA FACE API
+        // VERIFICA FACE API
+        // =====================================================
+
+        if (
+            typeof faceapi ===
+            'undefined'
+        ) {
+
+            throw new Error(
+                'face-api.js não foi carregado.'
+            );
+        }
+
+
+        // =====================================================
+        // CONFIGURA DETECTOR FACIAL
         // =====================================================
 
         this._faceOptions =
@@ -312,37 +386,62 @@ export class EmotionController {
 
 
         // =====================================================
-        // LIMPA ESTADOS ANTIGOS
+        // LIMPA ESTADOS ANTERIORES
         // =====================================================
 
         this._segmentationMask =
             null;
 
+
         this._segmentationImage =
             null;
+
 
         this._lastValidMask =
             null;
 
+
         this._segmentationReady =
             false;
+
 
         this._smoothFaceBox =
             null;
 
+
         this._faceBox =
             null;
+
+
+        this._headFrame =
+            null;
+
+
+        this._headFrameInitialized =
+            false;
+
+
+        // =====================================================
+        // RESET EMOÇÕES
+        // =====================================================
 
         this._emotionHistory =
             [];
 
+
         this._lastEmotion =
             null;
+
 
         this._candidateEmotion =
             null;
 
+
         this._candidateEmotionCount =
+            0;
+
+
+        this._lastFaceDetectionTime =
             0;
 
 
@@ -370,12 +469,13 @@ export class EmotionController {
 
 
     // =========================================================
-    // ESPERA VIDEO
+    // ESPERA O VÍDEO
     // =========================================================
 
     async _waitForVideo() {
 
         if (
+            this.video &&
             this.video.videoWidth > 0 &&
             this.video.videoHeight > 0
         ) {
@@ -390,17 +490,17 @@ export class EmotionController {
                 const check =
                     () => {
 
-                        if (
-                            !this.video ||
-                            !this.active &&
-                            this.video.readyState >= 2
-                        ) {
-                            // Não faz nada.
+                        if (!this.video) {
+
+                            requestAnimationFrame(
+                                check
+                            );
+
+                            return;
                         }
 
 
                         if (
-                            this.video &&
                             this.video.videoWidth > 0 &&
                             this.video.videoHeight > 0
                         ) {
@@ -430,6 +530,7 @@ export class EmotionController {
     async _segmentationLoop() {
 
         if (!this.active) {
+
             return;
         }
 
@@ -449,8 +550,7 @@ export class EmotionController {
 
                 await this._segmentation.send({
 
-                    image:
-                        this.video
+                    image: this.video
 
                 });
 
@@ -483,6 +583,7 @@ export class EmotionController {
     _faceLoop() {
 
         if (!this.active) {
+
             return;
         }
 
@@ -543,7 +644,8 @@ export class EmotionController {
 
         try {
 
-            let detection = null;
+            let detection =
+                null;
 
 
             // =================================================
@@ -609,24 +711,21 @@ export class EmotionController {
 
                     this._smoothFaceBox = {
 
-                        x:
-                            newBox.x,
+                        x: newBox.x,
 
-                        y:
-                            newBox.y,
+                        y: newBox.y,
 
-                        width:
-                            newBox.width,
+                        width: newBox.width,
 
-                        height:
-                            newBox.height
+                        height: newBox.height
+
                     };
 
                 }
 
 
                 // =============================================
-                // SUAVIZAÇÃO
+                // SUAVIZA O ROSTO
                 // =============================================
 
                 else {
@@ -656,10 +755,6 @@ export class EmotionController {
                 }
 
 
-                // =============================================
-                // ATUALIZA FACE BOX
-                // =============================================
-
                 this._faceBox = {
 
                     ...this._smoothFaceBox
@@ -668,7 +763,14 @@ export class EmotionController {
 
 
                 // =============================================
-                // EMOÇÃO
+                // ATUALIZA ENQUADRAMENTO
+                // =============================================
+
+                this._updateHeadFrame();
+
+
+                // =============================================
+                // PROCESSA EMOÇÃO
                 // =============================================
 
                 if (
@@ -683,30 +785,277 @@ export class EmotionController {
 
 
             /*
-             * Se o rosto não for encontrado:
+             * IMPORTANTE:
              *
+             * Se o rosto não for encontrado neste frame,
              * NÃO apagamos _faceBox.
              *
-             * Isso evita que a cabeça desapareça
-             * durante uma perda momentânea da detecção.
+             * Também não apagamos _headFrame.
+             *
+             * Isso evita que a imagem desapareça
+             * momentaneamente.
              */
-        }
 
-
-        catch (error) {
+        } catch (error) {
 
             console.error(
                 'Erro face-api:',
                 error
             );
 
-        }
-
-
-        finally {
+        } finally {
 
             this._detectingFace =
                 false;
+        }
+    }
+
+
+    // =========================================================
+    // ATUALIZA ENQUADRAMENTO DA CABEÇA
+    // =========================================================
+
+    _updateHeadFrame() {
+
+        if (
+            !this._faceBox ||
+            !this.video
+        ) {
+
+            return;
+        }
+
+
+        const videoW =
+            this.video.videoWidth;
+
+
+        const videoH =
+            this.video.videoHeight;
+
+
+        if (
+            !videoW ||
+            !videoH
+        ) {
+
+            return;
+        }
+
+
+        const face =
+            this._faceBox;
+
+
+        // =====================================================
+        // PRIMEIRA DETECÇÃO
+        // =====================================================
+
+        if (
+            !this._headFrameInitialized
+        ) {
+
+            /*
+             * IMPORTANTE:
+             *
+             * O tamanho é definido UMA VEZ.
+             */
+
+            const frameWidth =
+                face.width *
+                this._headFrameWidthFactor;
+
+
+            const frameHeight =
+                face.height *
+                this._headFrameHeightFactor;
+
+
+            const centerX =
+                face.x +
+                face.width / 2;
+
+
+            const centerY =
+                face.y +
+                face.height * 0.45;
+
+
+            this._headFrame = {
+
+                x:
+                    centerX -
+                    frameWidth / 2,
+
+                y:
+                    centerY -
+                    frameHeight *
+                    this._headFrameVerticalPosition,
+
+                width:
+                    frameWidth,
+
+                height:
+                    frameHeight
+            };
+
+
+            this._headFrameInitialized =
+                true;
+
+
+            this._clampHeadFrame();
+
+
+            return;
+        }
+
+
+        // =====================================================
+        // ENQUADRAMENTO JÁ EXISTE
+        // =====================================================
+
+        /*
+         * AQUI ESTÁ A PRINCIPAL CORREÇÃO.
+         *
+         * width e height NÃO são recalculados.
+         *
+         * Portanto:
+         *
+         * NÃO existe zoom.
+         */
+
+        const frame =
+            this._headFrame;
+
+
+        const centerX =
+            face.x +
+            face.width / 2;
+
+
+        const centerY =
+            face.y +
+            face.height * 0.45;
+
+
+        const targetX =
+            centerX -
+            frame.width / 2;
+
+
+        const targetY =
+            centerY -
+            frame.height *
+            this._headFrameVerticalPosition;
+
+
+        const s =
+            this._headFrameSmoothing;
+
+
+        // =====================================================
+        // SUAVIZA SOMENTE A POSIÇÃO
+        // =====================================================
+
+        frame.x =
+            frame.x * s +
+            targetX * (1 - s);
+
+
+        frame.y =
+            frame.y * s +
+            targetY * (1 - s);
+
+
+        // =====================================================
+        // GARANTE QUE NÃO SAIA DA CÂMERA
+        // =====================================================
+
+        this._clampHeadFrame();
+    }
+
+
+    // =========================================================
+    // LIMITA ENQUADRAMENTO À CÂMERA
+    // =========================================================
+
+    _clampHeadFrame() {
+
+        if (
+            !this._headFrame ||
+            !this.video
+        ) {
+
+            return;
+        }
+
+
+        const videoW =
+            this.video.videoWidth;
+
+
+        const videoH =
+            this.video.videoHeight;
+
+
+        const frame =
+            this._headFrame;
+
+
+        // =====================================================
+        // HORIZONTAL
+        // =====================================================
+
+        if (
+            frame.width >= videoW
+        ) {
+
+            frame.x =
+                0;
+
+            frame.width =
+                videoW;
+
+        } else {
+
+            frame.x =
+                Math.max(
+                    0,
+                    Math.min(
+                        frame.x,
+                        videoW -
+                        frame.width
+                    )
+                );
+        }
+
+
+        // =====================================================
+        // VERTICAL
+        // =====================================================
+
+        if (
+            frame.height >= videoH
+        ) {
+
+            frame.y =
+                0;
+
+            frame.height =
+                videoH;
+
+        } else {
+
+            frame.y =
+                Math.max(
+                    0,
+                    Math.min(
+                        frame.y,
+                        videoH -
+                        frame.height
+                    )
+                );
         }
     }
 
@@ -718,16 +1067,18 @@ export class EmotionController {
     _processEmotion(expressions) {
 
         if (!expressions) {
+
             return;
         }
 
 
         // =====================================================
-        // ENCONTRA EMOÇÃO DOMINANTE
+        // ENCONTRA EMOÇÃO MAIS PROVÁVEL
         // =====================================================
 
         let currentEmotion =
             'neutral';
+
 
         let currentConfidence =
             0;
@@ -768,7 +1119,7 @@ export class EmotionController {
 
 
         // =====================================================
-        // ADICIONA AO HISTÓRICO
+        // GUARDA HISTÓRICO
         // =====================================================
 
         this._emotionHistory.push({
@@ -795,10 +1146,11 @@ export class EmotionController {
 
 
         // =====================================================
-        // CONTAGEM
+        // CONTA EMOÇÕES
         // =====================================================
 
-        const counts = {};
+        const counts =
+            {};
 
 
         for (
@@ -807,17 +1159,18 @@ export class EmotionController {
         ) {
 
             counts[item.emotion] =
-                (counts[item.emotion] || 0)
-                + 1;
+                (counts[item.emotion] || 0) +
+                1;
         }
 
 
         // =====================================================
-        // EMOÇÃO DOMINANTE
+        // ENCONTRA EMOÇÃO DOMINANTE
         // =====================================================
 
         let dominantEmotion =
             currentEmotion;
+
 
         let dominantCount =
             0;
@@ -845,11 +1198,12 @@ export class EmotionController {
 
 
         // =====================================================
-        // CONFIDÊNCIA MÉDIA
+        // CALCULA CONFIANÇA MÉDIA
         // =====================================================
 
         let confidenceSum =
             0;
+
 
         let confidenceCount =
             0;
@@ -896,13 +1250,14 @@ export class EmotionController {
             this._candidateEmotion =
                 dominantEmotion;
 
+
             this._candidateEmotionCount =
                 1;
         }
 
 
         // =====================================================
-        // ESPERA ESTABILIZAR
+        // AINDA NÃO ESTÁ ESTÁVEL
         // =====================================================
 
         if (
@@ -915,7 +1270,7 @@ export class EmotionController {
 
 
         // =====================================================
-        // NÃO DISPARA NOVAMENTE A MESMA EMOÇÃO
+        // JÁ É A EMOÇÃO ATUAL
         // =====================================================
 
         if (
@@ -928,7 +1283,7 @@ export class EmotionController {
 
 
         // =====================================================
-        // CONFIRMA
+        // CONFIRMA EMOÇÃO
         // =====================================================
 
         this._lastEmotion =
@@ -943,6 +1298,10 @@ export class EmotionController {
         );
 
 
+        // =====================================================
+        // ENVIA PARA SISTEMA DE SOM
+        // =====================================================
+
         if (
             this.onEmotionChange
         ) {
@@ -952,6 +1311,7 @@ export class EmotionController {
                 dominantEmotion,
 
                 averageConfidence
+
             );
         }
     }
@@ -984,6 +1344,7 @@ export class EmotionController {
     ) {
 
         if (!canvas) {
+
             return;
         }
 
@@ -993,6 +1354,7 @@ export class EmotionController {
 
 
         if (!ctx) {
+
             return;
         }
 
@@ -1010,12 +1372,13 @@ export class EmotionController {
 
 
     // =========================================================
-    // DESENHA
+    // DESENHA TODOS OS CANVASES
     // =========================================================
 
     _drawAll() {
 
         if (!this.video) {
+
             return;
         }
 
@@ -1054,6 +1417,7 @@ export class EmotionController {
             const w =
                 canvas.width;
 
+
             const h =
                 canvas.height;
 
@@ -1091,7 +1455,7 @@ export class EmotionController {
 
 
             // =================================================
-            // VERIFICA MÁSCARA
+            // AGUARDA MÁSCARA
             // =================================================
 
             if (
@@ -1105,32 +1469,14 @@ export class EmotionController {
 
 
             // =================================================
-            // MÁSCARA ATUAL
+            // USA MÁSCARA ATUAL
+            // OU ÚLTIMA MÁSCARA VÁLIDA
             // =================================================
 
-            let mask =
-                this._segmentationMask;
+            const mask =
+                this._segmentationMask ||
+                this._lastValidMask;
 
-
-            // =================================================
-            // SE NÃO HOUVER MÁSCARA ATUAL,
-            // USA A ÚLTIMA VÁLIDA
-            // =================================================
-
-            if (
-                !mask &&
-                this._lastValidMask
-            ) {
-
-                mask =
-                    this._lastValidMask;
-            }
-
-
-            // =================================================
-            // SE A MÁSCARA FICOU MUITO TEMPO SEM ATUALIZAR
-            // NÃO INVENTAMOS UMA NOVA IMAGEM
-            // =================================================
 
             if (!mask) {
 
@@ -1141,14 +1487,19 @@ export class EmotionController {
 
 
             // =================================================
-            // DESENHA CABEÇA SEGMENTADA
+            // DESENHA CABEÇA
             // =================================================
 
             this._drawHeadSegmented(
+
                 ctx,
+
                 w,
+
                 h,
+
                 mask
+
             );
 
 
@@ -1158,7 +1509,7 @@ export class EmotionController {
 
 
     // =========================================================
-    // DESENHA CABEÇA SEGMENTADA
+    // DESENHA SOMENTE A CABEÇA SEGMENTADA
     // =========================================================
 
     _drawHeadSegmented(
@@ -1170,6 +1521,7 @@ export class EmotionController {
 
         const videoW =
             this.video.videoWidth;
+
 
         const videoH =
             this.video.videoHeight;
@@ -1185,68 +1537,25 @@ export class EmotionController {
 
 
         // =====================================================
-        // AGUARDA ROSTO
+        // AGUARDA DETECÇÃO FACIAL
         // =====================================================
 
-        if (!this._faceBox) {
+        if (
+            !this._faceBox ||
+            !this._headFrame
+        ) {
 
             return;
         }
 
 
-        const face =
-            this._faceBox;
-
-
-        // =====================================================
-        // EXPANDE FACE BOX
-        // =====================================================
-
-        const headLeft =
-            Math.max(
-                0,
-                face.x -
-                face.width * 0.75
-            );
-
-
-        const headTop =
-            Math.max(
-                0,
-                face.y -
-                face.height * 0.85
-            );
-
-
-        const headRight =
-            Math.min(
-                videoW,
-                face.x +
-                face.width * 1.75
-            );
-
-
-        const headBottom =
-            Math.min(
-                videoH,
-                face.y +
-                face.height * 1.55
-            );
-
-
-        const headWidth =
-            headRight -
-            headLeft;
-
-
-        const headHeight =
-            headBottom -
-            headTop;
+        const frame =
+            this._headFrame;
 
 
         if (
-            headWidth <= 0 ||
-            headHeight <= 0
+            frame.width <= 0 ||
+            frame.height <= 0
         ) {
 
             return;
@@ -1254,7 +1563,7 @@ export class EmotionController {
 
 
         // =====================================================
-        // MÁSCARA
+        // COPIA MÁSCARA MEDIAPIPE
         // =====================================================
 
         const maskCtx =
@@ -1269,17 +1578,24 @@ export class EmotionController {
         );
 
 
+        maskCtx.globalCompositeOperation =
+            'source-over';
+
+
         maskCtx.drawImage(
+
             segmentationMask,
+
             0,
             0,
             videoW,
             videoH
+
         );
 
 
         // =====================================================
-        // PESSOA
+        // COPIA IMAGEM DA CÂMERA
         // =====================================================
 
         const personCtx =
@@ -1299,11 +1615,14 @@ export class EmotionController {
 
 
         personCtx.drawImage(
+
             this.video,
+
             0,
             0,
             videoW,
             videoH
+
         );
 
 
@@ -1316,14 +1635,17 @@ export class EmotionController {
 
 
         personCtx.drawImage(
+
             this._maskCanvas,
+
             0,
             0
+
         );
 
 
         // =====================================================
-        // LIMITA À REGIÃO DA CABEÇA
+        // LIMITA À JANELA DA CABEÇA
         // =====================================================
 
         personCtx.globalCompositeOperation =
@@ -1335,11 +1657,85 @@ export class EmotionController {
 
 
         personCtx.fillRect(
-            headLeft,
-            headTop,
-            headWidth,
-            headHeight
+
+            frame.x,
+
+            frame.y,
+
+            frame.width,
+
+            frame.height
+
         );
+
+
+        // =====================================================
+        // MANTÉM PROPORÇÃO
+        // =====================================================
+
+        const sourceAspect =
+            frame.width /
+            frame.height;
+
+
+        const outputAspect =
+            outputW /
+            outputH;
+
+
+        let drawWidth =
+            outputW;
+
+
+        let drawHeight =
+            outputH;
+
+
+        let drawX =
+            0;
+
+
+        let drawY =
+            0;
+
+
+        if (
+            sourceAspect >
+            outputAspect
+        ) {
+
+            drawHeight =
+                outputH;
+
+
+            drawWidth =
+                outputH *
+                sourceAspect;
+
+
+            drawX =
+                (
+                    outputW -
+                    drawWidth
+                ) / 2;
+
+        } else {
+
+            drawWidth =
+                outputW;
+
+
+            drawHeight =
+                outputW /
+                sourceAspect;
+
+
+            drawY =
+                (
+                    outputH -
+                    drawHeight
+                ) / 2;
+        }
 
 
         // =====================================================
@@ -1347,17 +1743,19 @@ export class EmotionController {
         // =====================================================
 
         ctx.drawImage(
+
             this._personCanvas,
 
-            headLeft,
-            headTop,
-            headWidth,
-            headHeight,
+            frame.x,
+            frame.y,
+            frame.width,
+            frame.height,
 
-            0,
-            0,
-            outputW,
-            outputH
+            drawX,
+            drawY,
+            drawWidth,
+            drawHeight
+
         );
     }
 
@@ -1422,8 +1820,20 @@ export class EmotionController {
             null;
 
 
+        this._headFrame =
+            null;
+
+
+        this._headFrameInitialized =
+            false;
+
+
         this._emotionHistory =
             [];
+
+
+        this._lastEmotion =
+            null;
 
 
         this._candidateEmotion =
