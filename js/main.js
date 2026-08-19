@@ -71,6 +71,11 @@ async function start() {
     document.body.appendChild(hiddenVideo);
     await hiddenVideo.play();
 
+    eCtrl.startDetection(
+        stream,
+        hiddenVideo
+    );
+
     const { EmotionController } = await import('./detec_emotion.js');
     const { HologramController } = await import('./control_holo.js');
 
