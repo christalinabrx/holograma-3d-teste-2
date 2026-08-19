@@ -8,44 +8,64 @@ export class EmotionController {
 
         this.canvases = {};
 
-        // Face detection
+        // =====================================================
+        // FACE API
+        // =====================================================
+
         this._faceBox = null;
         this._landmarks = null;
 
-        // Segmentation
+        // =====================================================
+        // MEDIAPIPE
+        // =====================================================
+
         this._segmentation = null;
         this._segmentationMask = null;
+        this._segmentationImage = null;
+
         this._segmentationBusy = false;
 
-        // Offscreen canvases
-        this._segCanvas = document.createElement('canvas');
-        this._segCtx = this._segCanvas.getContext('2d', {
-            willReadFrequently: false
-        });
+        // =====================================================
+        // CANVAS AUXILIARES
+        // =====================================================
 
-        this._outputCanvas = document.createElement('canvas');
-        this._outputCtx = this._outputCanvas.getContext('2d', {
-            willReadFrequently: false
-        });
+        this._maskCanvas =
+            document.createElement('canvas');
 
-        // UI modes
+        this._maskCtx =
+            this._maskCanvas.getContext('2d');
+
+        this._personCanvas =
+            document.createElement('canvas');
+
+        this._personCtx =
+            this._personCanvas.getContext('2d');
+
+        // =====================================================
+        // CONFIGURAÇÃO
+        // =====================================================
+
         this.showLandmarks = false;
         this.carouselMode = false;
 
-        // Detection timing
         this._lastDetection = 0;
         this._detectionInterval = 100;
 
         this._lastSegmentation = 0;
         this._segmentationInterval = 80;
 
-        // Start rendering immediately.
+        this._lastEmotion = null;
+
+        // =====================================================
+        // LOOP DE RENDERIZAÇÃO
+        // =====================================================
+
         this._renderLoop();
     }
 
 
     // =========================================================
-    // INICIALIZAÇÃO DA SEGMENTAÇÃO
+    // INICIALIZA MEDIAPIPE
     // =========================================================
 
     async _initSegmentation() {
@@ -55,181 +75,259 @@ export class EmotionController {
         }
 
         if (typeof SelfieSegmentation === 'undefined') {
+
             throw new Error(
-                'MediaPipe SelfieSegmentation não foi carregado.'
+                'SelfieSegmentation não está disponível.'
             );
         }
 
-        this._segmentation = new SelfieSegmentation({
-            locateFile: (file) => {
-                return `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1/${file}`;
-            }
-        });
 
-        /*
-         * Modelo 1:
-         * otimizado para imagens/câmera em formato paisagem.
-         *
-         * O MediaPipe oferece os modelos general e landscape.
-         */
+        this._segmentation =
+            new SelfieSegmentation({
+
+                locateFile: (file) => {
+
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1/${file}`;
+
+                }
+
+            });
+
+
         this._segmentation.setOptions({
+
+            /*
+             * 1 = modelo otimizado para paisagem.
+             */
             modelSelection: 1
+
         });
 
-        this._segmentation.onResults((results) => {
-            if (!results || !results.segmentationMask) {
-                return;
+
+        this._segmentation.onResults(
+            (results) => {
+
+                if (!results) {
+                    return;
+                }
+
+
+                if (!results.segmentationMask) {
+
+                    console.warn(
+                        'MediaPipe não retornou segmentationMask.'
+                    );
+
+                    return;
+                }
+
+
+                /*
+                 * Guardamos a máscara.
+                 */
+                this._segmentationMask =
+                    results.segmentationMask;
+
+
+                /*
+                 * Guardamos também a imagem original
+                 * retornada pelo MediaPipe.
+                 */
+                this._segmentationImage =
+                    results.image;
             }
+        );
 
-            this._segmentationMask = results.segmentationMask;
-        });
 
-        console.log('MediaPipe Selfie Segmentation inicializado.');
+        console.log(
+            'MediaPipe Selfie Segmentation inicializado.'
+        );
     }
 
 
     // =========================================================
-    // INICIA CÂMERA / DETECÇÃO
+    // INICIA DETECÇÃO
     // =========================================================
 
     async startDetection(stream) {
 
-        this.video = document.createElement('video');
+        this.video =
+            document.createElement('video');
 
-        this.video.srcObject = stream;
+
+        this.video.srcObject =
+            stream;
+
         this.video.muted = true;
+
         this.video.autoplay = true;
+
         this.video.playsInline = true;
+
 
         await this.video.play();
 
-        /*
-         * Espera a câmera informar suas dimensões reais.
-         */
+
         await new Promise((resolve) => {
 
-            if (this.video.videoWidth && this.video.videoHeight) {
+            if (
+                this.video.videoWidth > 0 &&
+                this.video.videoHeight > 0
+            ) {
+
                 resolve();
+
                 return;
             }
 
-            this.video.onloadedmetadata = () => resolve();
+
+            this.video.onloadedmetadata =
+                () => resolve();
 
         });
 
+
+        console.log(
+            'Câmera:',
+            this.video.videoWidth,
+            'x',
+            this.video.videoHeight
+        );
+
+
         await this._initSegmentation();
 
-        this._segCanvas.width = this.video.videoWidth;
-        this._segCanvas.height = this.video.videoHeight;
 
-        this._outputCanvas.width = this.video.videoWidth;
-        this._outputCanvas.height = this.video.videoHeight;
+        const vw =
+            this.video.videoWidth;
+
+        const vh =
+            this.video.videoHeight;
+
+
+        this._maskCanvas.width = vw;
+        this._maskCanvas.height = vh;
+
+        this._personCanvas.width = vw;
+        this._personCanvas.height = vh;
+
 
         this.active = true;
 
+
         this._detectLoop();
+
         this._segmentationLoop();
     }
 
 
     // =========================================================
-    // DETECÇÃO DO ROSTO + EXPRESSÃO
+    // DETECÇÃO FACIAL
     // =========================================================
 
     async _detectLoop() {
 
-        if (!this.active || !this.video) {
-            setTimeout(() => this._detectLoop(), 100);
+        if (
+            !this.active ||
+            !this.video
+        ) {
+
+            setTimeout(
+                () => this._detectLoop(),
+                100
+            );
+
             return;
         }
 
-        const now = performance.now();
 
-        if (now - this._lastDetection < this._detectionInterval) {
-            setTimeout(() => this._detectLoop(), 30);
+        const now =
+            performance.now();
+
+
+        if (
+            now - this._lastDetection <
+            this._detectionInterval
+        ) {
+
+            setTimeout(
+                () => this._detectLoop(),
+                30
+            );
+
             return;
         }
 
-        this._lastDetection = now;
+
+        this._lastDetection =
+            now;
+
 
         try {
 
-            let detection;
-
             const options =
                 new faceapi.TinyFaceDetectorOptions({
+
                     inputSize: 416,
+
                     scoreThreshold: 0.45
+
                 });
+
+
+            let detection;
 
 
             if (this.showLandmarks) {
 
-                detection = await faceapi
-                    .detectSingleFace(
-                        this.video,
-                        options
-                    )
-                    .withFaceLandmarks(true)
-                    .withFaceExpressions();
+                detection =
+                    await faceapi
+                        .detectSingleFace(
+                            this.video,
+                            options
+                        )
+                        .withFaceLandmarks(true)
+                        .withFaceExpressions();
+
 
                 this._landmarks =
                     detection?.landmarks || null;
 
             } else {
 
-                detection = await faceapi
-                    .detectSingleFace(
-                        this.video,
-                        options
-                    )
-                    .withFaceExpressions();
+                detection =
+                    await faceapi
+                        .detectSingleFace(
+                            this.video,
+                            options
+                        )
+                        .withFaceExpressions();
 
-                this._landmarks = null;
+
+                this._landmarks =
+                    null;
             }
 
 
-            if (detection) {
+            if (!detection) {
 
-                /*
-                 * Esta caixa é usada para localizar
-                 * a cabeça dentro da máscara.
-                 */
-                this._faceBox = detection.detection.box;
+                this._faceBox =
+                    null;
 
-
-                /*
-                 * Expressão continua funcionando
-                 * exatamente como antes.
-                 */
-                if (this.onEmotionChange) {
-
-                    const expressions =
-                        detection.expressions;
-
-                    const emotion =
-                        Object.keys(expressions)
-                            .reduce((a, b) =>
-                                expressions[a] >
-                                expressions[b]
-                                    ? a
-                                    : b
-                            );
-
-                    const confidence =
-                        expressions[emotion];
-
-                    this.onEmotionChange(
-                        emotion,
-                        confidence
-                    );
-                }
+                this._landmarks =
+                    null;
 
             } else {
 
-                this._faceBox = null;
-                this._landmarks = null;
+                this._faceBox =
+                    detection.detection.box;
+
+
+                this._processEmotion(
+                    detection.expressions
+                );
             }
+
 
         } catch (error) {
 
@@ -239,10 +337,70 @@ export class EmotionController {
             );
         }
 
+
         setTimeout(
             () => this._detectLoop(),
             30
         );
+    }
+
+
+    // =========================================================
+    // EXPRESSÕES
+    // =========================================================
+
+    _processEmotion(expressions) {
+
+        if (!expressions) {
+            return;
+        }
+
+
+        let emotion =
+            'neutral';
+
+        let confidence = 0;
+
+
+        for (
+            const [name, value]
+            of Object.entries(expressions)
+        ) {
+
+            if (value > confidence) {
+
+                confidence =
+                    value;
+
+                emotion =
+                    name;
+            }
+        }
+
+
+        /*
+         * Evita mandar a mesma emoção
+         * para o áudio a cada frame.
+         */
+        if (
+            emotion === this._lastEmotion
+        ) {
+
+            return;
+        }
+
+
+        this._lastEmotion =
+            emotion;
+
+
+        if (this.onEmotionChange) {
+
+            this.onEmotionChange(
+                emotion,
+                confidence
+            );
+        }
     }
 
 
@@ -257,6 +415,7 @@ export class EmotionController {
             !this.video ||
             !this._segmentation
         ) {
+
             setTimeout(
                 () => this._segmentationLoop(),
                 100
@@ -266,12 +425,15 @@ export class EmotionController {
         }
 
 
-        const now = performance.now();
+        const now =
+            performance.now();
+
 
         if (
             now - this._lastSegmentation <
             this._segmentationInterval
         ) {
+
             setTimeout(
                 () => this._segmentationLoop(),
                 30
@@ -280,13 +442,11 @@ export class EmotionController {
             return;
         }
 
-        this._lastSegmentation = now;
+
+        this._lastSegmentation =
+            now;
 
 
-        /*
-         * Evita enviar uma nova imagem enquanto
-         * o MediaPipe ainda está processando a anterior.
-         */
         if (this._segmentationBusy) {
 
             setTimeout(
@@ -298,13 +458,16 @@ export class EmotionController {
         }
 
 
-        this._segmentationBusy = true;
+        this._segmentationBusy =
+            true;
 
 
         try {
 
             await this._segmentation.send({
+
                 image: this.video
+
             });
 
         } catch (error) {
@@ -316,7 +479,8 @@ export class EmotionController {
 
         } finally {
 
-            this._segmentationBusy = false;
+            this._segmentationBusy =
+                false;
         }
 
 
@@ -328,7 +492,7 @@ export class EmotionController {
 
 
     // =========================================================
-    // RENDERIZAÇÃO
+    // RENDER LOOP
     // =========================================================
 
     _renderLoop() {
@@ -342,21 +506,29 @@ export class EmotionController {
 
 
     // =========================================================
-    // REGISTRA OS QUATRO CANVAS
+    // REGISTRA CANVAS
     // =========================================================
 
-    registerCanvas(id, canvas, videoEl) {
+    registerCanvas(
+        id,
+        canvas,
+        videoEl
+    ) {
 
         this.canvases[id] = {
+
             canvas,
+
             videoEl,
-            ctx: canvas.getContext('2d')
+
+            ctx:
+                canvas.getContext('2d')
         };
     }
 
 
     // =========================================================
-    // DESENHA A IMAGEM FINAL
+    // DESENHA TUDO
     // =========================================================
 
     _drawAll() {
@@ -369,7 +541,9 @@ export class EmotionController {
                     videoEl,
                     ctx
                 }
-            ] of Object.entries(this.canvases)
+            ] of Object.entries(
+                this.canvases
+            )
         ) {
 
             if (
@@ -378,23 +552,31 @@ export class EmotionController {
                 !videoEl ||
                 videoEl.readyState < 2
             ) {
+
                 continue;
             }
 
 
-            const w = canvas.width;
-            const h = canvas.height;
+            const w =
+                canvas.width;
+
+            const h =
+                canvas.height;
 
 
             /*
-             * FUNDO SEMPRE PRETO
+             * =================================================
+             * SEMPRE COMEÇA PRETO
+             * =================================================
              */
+
             ctx.save();
 
             ctx.globalCompositeOperation =
                 'source-over';
 
-            ctx.fillStyle = '#000000';
+            ctx.fillStyle =
+                '#000000';
 
             ctx.fillRect(
                 0,
@@ -407,324 +589,303 @@ export class EmotionController {
 
 
             /*
-             * Sem rosto ou sem máscara:
-             * deixa o canvas totalmente preto.
+             * =================================================
+             * AINDA NÃO HÁ ROSTO
+             * =================================================
              */
-            if (
-                !this._faceBox ||
-                !this._segmentationMask
-            ) {
+
+            if (!this._faceBox) {
+
                 continue;
             }
 
+
+            /*
+             * =================================================
+             * AINDA NÃO HÁ MÁSCARA
+             * =================================================
+             *
+             * IMPORTANTE:
+             *
+             * Não vamos deixar a câmera preta enquanto
+             * o MediaPipe ainda está processando.
+             *
+             * Mostramos temporariamente a câmera.
+             *
+             * Assim conseguimos saber se a câmera está viva.
+             */
+
+            if (!this._segmentationMask) {
+
+                ctx.drawImage(
+                    videoEl,
+                    0,
+                    0,
+                    w,
+                    h
+                );
+
+                continue;
+            }
+
+
+            /*
+             * =================================================
+             * SEGMENTAÇÃO
+             * =================================================
+             */
 
             this._drawSegmentedHead(
                 ctx,
                 w,
                 h
             );
-
-
-            /*
-             * Landmarks continuam opcionais.
-             */
-            if (
-                !this.carouselMode &&
-                this.showLandmarks &&
-                this._landmarks
-            ) {
-
-                this._drawLandmarks(
-                    ctx,
-                    w,
-                    h
-                );
-            }
         }
     }
 
 
-  _drawSegmentedHead(ctx, w, h) {
+    // =========================================================
+    // DESENHA CABEÇA SEGMENTADA
+    // =========================================================
 
-    if (
-        !this.video ||
-        !this._faceBox ||
-        !this._segmentationMask
+    _drawSegmentedHead(
+        ctx,
+        w,
+        h
     ) {
-        return;
-    }
-
-    const videoW = this.video.videoWidth;
-    const videoH = this.video.videoHeight;
-
-    if (!videoW || !videoH) return;
-
-
-    const face = this._faceBox;
-
-
-    // =========================================================
-    // ÁREA DA CABEÇA
-    // =========================================================
-
-    const headX =
-        face.x - face.width * 0.85;
-
-    const headY =
-        face.y - face.height * 1.05;
-
-    const headWidth =
-        face.width * 2.70;
-
-    const headHeight =
-        face.height * 2.60;
-
-
-    const sx = Math.max(0, headX);
-    const sy = Math.max(0, headY);
-
-    const ex = Math.min(
-        videoW,
-        headX + headWidth
-    );
-
-    const ey = Math.min(
-        videoH,
-        headY + headHeight
-    );
-
-    const sw = ex - sx;
-    const sh = ey - sy;
-
-
-    if (sw <= 0 || sh <= 0) return;
-
-
-    // =========================================================
-    // CANVAS TEMPORÁRIO
-    // =========================================================
-
-    const maskCanvas = this._segCanvas;
-    const maskCtx = this._segCtx;
-
-    maskCanvas.width = w;
-    maskCanvas.height = h;
-
-
-    /*
-     * Limpa completamente.
-     */
-    maskCtx.clearRect(
-        0,
-        0,
-        w,
-        h
-    );
-
-
-    /*
-     * Desenha a máscara da pessoa.
-     *
-     * NÃO existe elipse aqui.
-     *
-     * A forma da pessoa vem diretamente
-     * da segmentação.
-     */
-    maskCtx.drawImage(
-        this._segmentationMask,
-        sx,
-        sy,
-        sw,
-        sh,
-        0,
-        0,
-        w,
-        h
-    );
-
-
-    /*
-     * ========================================================
-     * DESENHA A IMAGEM ORIGINAL
-     * ========================================================
-     */
-
-    const personCanvas =
-        document.createElement('canvas');
-
-    personCanvas.width = w;
-    personCanvas.height = h;
-
-    const personCtx =
-        personCanvas.getContext('2d');
-
-
-    personCtx.clearRect(
-        0,
-        0,
-        w,
-        h
-    );
-
-
-    personCtx.drawImage(
-        this.video,
-        sx,
-        sy,
-        sw,
-        sh,
-        0,
-        0,
-        w,
-        h
-    );
-
-
-    /*
-     * ========================================================
-     * APLICA A MÁSCARA
-     * ========================================================
-     */
-
-    personCtx.globalCompositeOperation =
-        'destination-in';
-
-    personCtx.drawImage(
-        maskCanvas,
-        0,
-        0,
-        w,
-        h
-    );
-
-
-    /*
-     * ========================================================
-     * FUNDO PRETO + PESSOA
-     * ========================================================
-     */
-
-    ctx.save();
-
-    ctx.globalCompositeOperation =
-        'source-over';
-
-    ctx.fillStyle =
-        '#000000';
-
-    ctx.fillRect(
-        0,
-        0,
-        w,
-        h
-    );
-
-    ctx.drawImage(
-        personCanvas,
-        0,
-        0,
-        w,
-        h
-    );
-
-    ctx.restore();
-}
-
-    // =========================================================
-    // LANDMARKS
-    // =========================================================
-
-    _drawLandmarks(ctx, w, h) {
 
         if (
-            !this._landmarks ||
-            !this.video
+            !this.video ||
+            !this._faceBox ||
+            !this._segmentationMask
         ) {
+
             return;
         }
 
 
-        /*
-         * Os landmarks precisam acompanhar
-         * o mesmo recorte da cabeça.
-         */
+        const videoW =
+            this.video.videoWidth;
+
+        const videoH =
+            this.video.videoHeight;
+
+
+        if (
+            !videoW ||
+            !videoH
+        ) {
+
+            return;
+        }
+
 
         const face =
             this._faceBox;
 
-        if (!face) return;
 
-
-        const videoW =
-            this.video.videoWidth || w;
-
-        const videoH =
-            this.video.videoHeight || h;
-
+        /*
+         * =================================================
+         * REGIÃO DA CABEÇA
+         * =================================================
+         *
+         * O rosto serve somente como referência.
+         *
+         * Não é uma elipse.
+         *
+         * A forma final vem da máscara do MediaPipe.
+         */
 
         const headX =
-            face.x - face.width * 0.85;
+            face.x -
+            face.width * 0.85;
 
         const headY =
-            face.y - face.height * 1.05;
+            face.y -
+            face.height * 1.05;
 
-        const headWidth =
+        const headW =
             face.width * 2.70;
 
-        const headHeight =
+        const headH =
             face.height * 2.60;
 
 
-        const pts =
-            this._landmarks.positions;
+        const sx =
+            Math.max(
+                0,
+                headX
+            );
 
+        const sy =
+            Math.max(
+                0,
+                headY
+            );
+
+        const ex =
+            Math.min(
+                videoW,
+                headX + headW
+            );
+
+        const ey =
+            Math.min(
+                videoH,
+                headY + headH
+            );
+
+
+        const sw =
+            ex - sx;
+
+        const sh =
+            ey - sy;
+
+
+        if (
+            sw <= 0 ||
+            sh <= 0
+        ) {
+
+            return;
+        }
+
+
+        // =====================================================
+        // CANVAS DE MÁSCARA
+        // =====================================================
+
+        const maskCanvas =
+            this._maskCanvas;
+
+        const maskCtx =
+            this._maskCtx;
+
+
+        maskCanvas.width =
+            w;
+
+        maskCanvas.height =
+            h;
+
+
+        maskCtx.clearRect(
+            0,
+            0,
+            w,
+            h
+        );
+
+
+        /*
+         * Desenha a máscara.
+         *
+         * NÃO existe elipse.
+         */
+        maskCtx.drawImage(
+            this._segmentationMask,
+            sx,
+            sy,
+            sw,
+            sh,
+            0,
+            0,
+            w,
+            h
+        );
+
+
+        // =====================================================
+        // CANVAS DA PESSOA
+        // =====================================================
+
+        const personCanvas =
+            this._personCanvas;
+
+        const personCtx =
+            this._personCtx;
+
+
+        personCanvas.width =
+            w;
+
+        personCanvas.height =
+            h;
+
+
+        personCtx.clearRect(
+            0,
+            0,
+            w,
+            h
+        );
+
+
+        /*
+         * Desenha a imagem da câmera.
+         */
+        personCtx.drawImage(
+            this.video,
+            sx,
+            sy,
+            sw,
+            sh,
+            0,
+            0,
+            w,
+            h
+        );
+
+
+        /*
+         * =================================================
+         * APLICA MÁSCARA
+         * =================================================
+         */
+
+        personCtx.globalCompositeOperation =
+            'destination-in';
+
+
+        personCtx.drawImage(
+            maskCanvas,
+            0,
+            0,
+            w,
+            h
+        );
+
+
+        /*
+         * =================================================
+         * RESULTADO
+         * =================================================
+         */
 
         ctx.save();
 
+        ctx.globalCompositeOperation =
+            'source-over';
+
         ctx.fillStyle =
-            'rgba(0, 255, 200, 0.85)';
+            '#000000';
 
-        ctx.strokeStyle =
-            'rgba(0, 255, 200, 0.4)';
-
-        ctx.lineWidth = 0.8;
-
-
-        pts.forEach((p) => {
-
-            const x =
-                ((p.x - headX) /
-                    headWidth) *
-                w;
-
-            const y =
-                ((p.y - headY) /
-                    headHeight) *
-                h;
+        ctx.fillRect(
+            0,
+            0,
+            w,
+            h
+        );
 
 
-            if (
-                x < 0 ||
-                x > w ||
-                y < 0 ||
-                y > h
-            ) {
-                return;
-            }
-
-
-            ctx.beginPath();
-
-            ctx.arc(
-                x,
-                y,
-                2,
-                0,
-                Math.PI * 2
-            );
-
-            ctx.fill();
-        });
+        ctx.drawImage(
+            personCanvas,
+            0,
+            0,
+            w,
+            h
+        );
 
 
         ctx.restore();
