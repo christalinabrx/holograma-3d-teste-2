@@ -14,6 +14,10 @@ export class EmotionController {
 
         this.canvases = {};
 
+        this._smoothFaceBox = null;
+
+        this._faceSmoothing = 0.75;
+
 
         // =====================================================
         // FACE API
@@ -27,7 +31,23 @@ export class EmotionController {
 
         this.carouselMode = false;
 
+        // =====================================================
+// ESTABILIZAÇÃO DAS EMOÇÕES
+// =====================================================
+
         this._lastEmotion = null;
+
+        this._candidateEmotion = null;
+
+        this._candidateEmotionCount = 0;
+
+        this._emotionHistory = [];
+
+        this._emotionHistorySize = 6;
+
+        this._emotionMinConfidence = 0.35;
+
+        this._emotionRequiredFrames = 3;
 
         this._detectingFace = false;
 
@@ -47,6 +67,18 @@ export class EmotionController {
         this._segmentationImage = null;
 
         this._segmentationReady = false;
+
+        // =====================================================
+// ESTABILIZAÇÃO DA SEGMENTAÇÃO
+// =====================================================
+
+        this._lastValidMask = null;
+
+        this._lastMaskTime = 0;
+
+        this._maskHoldTime = 180;
+
+        this._lastSegmentationImage = null;
 
         this._sendingFrame = false;
 
@@ -142,29 +174,41 @@ export class EmotionController {
 
 
         this._segmentation.onResults(
-            (results) => {
+    (results) => {
 
-                if (
-                    !results ||
-                    !results.segmentationMask
-                ) {
+        if (
+            !results ||
+            !results.segmentationMask
+        ) {
 
-                    return;
-                }
-
-
-                this._segmentationMask =
-                    results.segmentationMask;
+            return;
+        }
 
 
-                this._segmentationImage =
-                    results.image;
+        // =================================================
+        // NOVA MÁSCARA VÁLIDA
+        // =================================================
+
+        this._segmentationMask =
+            results.segmentationMask;
 
 
-                this._segmentationReady =
-                    true;
-            }
-        );
+        this._segmentationImage =
+            results.image;
+
+
+        this._lastValidMask =
+            results.segmentationMask;
+
+
+        this._lastMaskTime =
+            performance.now();
+
+
+        this._segmentationReady =
+            true;
+    }
+);
 
 
         console.log(
@@ -524,10 +568,87 @@ export class EmotionController {
             // ROSTO ENCONTRADO
             // =================================================
 
-            if (detection) {
+           if (detection) {
 
-                this._faceBox =
-                    detection.detection.box;
+    const newBox =
+        detection.detection.box;
+
+
+    // =================================================
+    // PRIMEIRA DETECÇÃO
+    // =================================================
+
+    if (
+        !this._smoothFaceBox
+    ) {
+
+        this._smoothFaceBox = {
+
+            x: newBox.x,
+
+            y: newBox.y,
+
+            width: newBox.width,
+
+            height: newBox.height
+
+        };
+
+
+    } else {
+
+        // =============================================
+        // SUAVIZA POSIÇÃO
+        // =============================================
+
+        const s =
+            this._faceSmoothing;
+
+
+        this._smoothFaceBox.x =
+            this._smoothFaceBox.x * s +
+            newBox.x * (1 - s);
+
+
+        this._smoothFaceBox.y =
+            this._smoothFaceBox.y * s +
+            newBox.y * (1 - s);
+
+
+        this._smoothFaceBox.width =
+            this._smoothFaceBox.width * s +
+            newBox.width * (1 - s);
+
+
+        this._smoothFaceBox.height =
+            this._smoothFaceBox.height * s +
+            newBox.height * (1 - s);
+    }
+
+
+    // =================================================
+    // USA A CAIXA SUAVIZADA
+    // =================================================
+
+    this._faceBox = {
+
+        ...this._smoothFaceBox
+
+    };
+
+
+    // =================================================
+    // EMOÇÃO
+    // =================================================
+
+    if (
+        detection.expressions
+    ) {
+
+        this._processEmotion(
+            detection.expressions
+        );
+    }
 
 
                 if (
@@ -573,71 +694,242 @@ export class EmotionController {
     // PROCESSA EMOÇÃO
     // =========================================================
 
-    _processEmotion(
-        expressions
+    _processEmotion(expressions) {
+
+    if (!expressions) {
+        return;
+    }
+
+    // =====================================================
+    // ENCONTRA A EMOÇÃO MAIS PROVÁVEL
+    // =====================================================
+
+    let currentEmotion = 'neutral';
+
+    let currentConfidence = 0;
+
+    for (
+        const [name, value]
+        of Object.entries(expressions)
     ) {
 
-        if (!expressions) {
-            return;
-        }
+        if (value > currentConfidence) {
 
+            currentConfidence =
+                value;
 
-        let emotion =
-            'neutral';
-
-
-        let confidence =
-            0;
-
-
-        for (
-            const [name, value]
-            of Object.entries(
-                expressions
-            )
-        ) {
-
-            if (
-                value > confidence
-            ) {
-
-                confidence =
-                    value;
-
-
-                emotion =
-                    name;
-            }
-        }
-
-
-        /*
-         * Só dispara mudança quando realmente mudou.
-         */
-
-        if (
-            emotion ===
-            this._lastEmotion
-        ) {
-
-            return;
-        }
-
-
-        this._lastEmotion =
-            emotion;
-
-
-        if (
-            this.onEmotionChange
-        ) {
-
-            this.onEmotionChange(
-                emotion,
-                confidence
-            );
+            currentEmotion =
+                name;
         }
     }
+
+
+    // =====================================================
+    // CONFIDÊNCIA MUITO BAIXA
+    // =====================================================
+
+    if (
+        currentConfidence <
+        this._emotionMinConfidence
+    ) {
+
+        return;
+    }
+
+
+    // =====================================================
+    // GUARDA HISTÓRICO
+    // =====================================================
+
+    this._emotionHistory.push({
+
+        emotion:
+            currentEmotion,
+
+        confidence:
+            currentConfidence,
+
+        time:
+            performance.now()
+    });
+
+
+    // Mantém somente os últimos frames
+
+    if (
+        this._emotionHistory.length >
+        this._emotionHistorySize
+    ) {
+
+        this._emotionHistory.shift();
+    }
+
+
+    // =====================================================
+    // CONTA A EMOÇÃO DOMINANTE
+    // =====================================================
+
+    const counts = {};
+
+
+    for (
+        const item
+        of this._emotionHistory
+    ) {
+
+        if (
+            !counts[item.emotion]
+        ) {
+
+            counts[item.emotion] = 0;
+        }
+
+
+        counts[item.emotion]++;
+    }
+
+
+    let dominantEmotion =
+        currentEmotion;
+
+    let dominantCount =
+        0;
+
+
+    for (
+        const [emotion, count]
+        of Object.entries(counts)
+    ) {
+
+        if (
+            count >
+            dominantCount
+        ) {
+
+            dominantEmotion =
+                emotion;
+
+            dominantCount =
+                count;
+        }
+    }
+
+
+    // =====================================================
+    // CONFIDÊNCIA MÉDIA
+    // =====================================================
+
+    let confidenceSum =
+        0;
+
+    let confidenceCount =
+        0;
+
+
+    for (
+        const item
+        of this._emotionHistory
+    ) {
+
+        if (
+            item.emotion ===
+            dominantEmotion
+        ) {
+
+            confidenceSum +=
+                item.confidence;
+
+            confidenceCount++;
+        }
+    }
+
+
+    const averageConfidence =
+        confidenceCount > 0
+            ? confidenceSum /
+              confidenceCount
+            : 0;
+
+
+    // =====================================================
+    // EMOÇÃO CANDIDATA
+    // =====================================================
+
+    if (
+        dominantEmotion ===
+        this._candidateEmotion
+    ) {
+
+        this._candidateEmotionCount++;
+
+    } else {
+
+        this._candidateEmotion =
+            dominantEmotion;
+
+        this._candidateEmotionCount =
+            1;
+    }
+
+
+    // =====================================================
+    // AINDA NÃO ESTÁ ESTÁVEL
+    // =====================================================
+
+    if (
+        this._candidateEmotionCount <
+        this._emotionRequiredFrames
+    ) {
+
+        return;
+    }
+
+
+    // =====================================================
+    // JÁ É A EMOÇÃO ATUAL
+    // =====================================================
+
+    if (
+        dominantEmotion ===
+        this._lastEmotion
+    ) {
+
+        return;
+    }
+
+
+    // =====================================================
+    // CONFIRMA A NOVA EMOÇÃO
+    // =====================================================
+
+    this._lastEmotion =
+        dominantEmotion;
+
+
+    console.log(
+        'Emoção estabilizada:',
+        dominantEmotion,
+        'confiança:',
+        averageConfidence.toFixed(2)
+    );
+
+
+    // =====================================================
+    // ENVIA PARA O SISTEMA DE SOM
+    // =====================================================
+
+    if (
+        this.onEmotionChange
+    ) {
+
+        this.onEmotionChange(
+
+            dominantEmotion,
+
+            averageConfidence
+        );
+    }
+}
 
 
     // =========================================================
@@ -769,14 +1061,37 @@ export class EmotionController {
             // =================================================
 
             if (
-                !this._segmentationReady ||
-                !this._segmentationMask
-            ) {
+    !this._segmentationReady
+) {
 
-                ctx.restore();
+    ctx.restore();
 
-                continue;
-            }
+    continue;
+}
+
+
+// =====================================================
+// USA A ÚLTIMA MÁSCARA VÁLIDA
+// =====================================================
+
+if (
+    !this._segmentationMask &&
+    this._lastValidMask
+) {
+
+    this._segmentationMask =
+        this._lastValidMask;
+}
+
+
+if (
+    !this._segmentationMask
+) {
+
+    ctx.restore();
+
+    continue;
+}
 
 
             // =================================================
