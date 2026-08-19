@@ -58,62 +58,292 @@ async function init() {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 async function start() {
-    const id = document.getElementById('cameraSelect').value;
-    const stream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: id ? { exact: id } : undefined }
-    });
 
-    const hiddenVideo = document.createElement('video');
-    hiddenVideo.srcObject = stream;
-    hiddenVideo.muted     = true;
-    hiddenVideo.autoplay  = true;
-    hiddenVideo.style.display = 'none';
-    document.body.appendChild(hiddenVideo);
-    await hiddenVideo.play();
+    try {
 
-    eCtrl.startDetection(
-        stream,
-        hiddenVideo
-    );
+        const id =
+            document.getElementById(
+                'cameraSelect'
+            ).value;
 
-    const { EmotionController } = await import('./detec_emotion.js');
-    const { HologramController } = await import('./control_holo.js');
 
-    hCtrl = new HologramController();
-    eCtrl = new EmotionController();
+        const stream =
+            await navigator.mediaDevices.getUserMedia({
 
-    // Substitui <video> por <canvas> mantendo estilos CSS
-    FACE_IDS.forEach(faceId => {
-        const videoEl = document.getElementById(faceId);
-        if (!videoEl) return;
-        const canvas    = document.createElement('canvas');
-        canvas.width    = 300;
-        canvas.height   = 300;
-        canvas.id       = faceId + '_canvas';
-        canvas.style.cssText = videoEl.style.cssText;
-        canvas.className     = videoEl.className;
-        videoEl.parentNode.replaceChild(canvas, videoEl);
-        eCtrl.registerCanvas(faceId, canvas, hiddenVideo);
-    });
+                video: {
+                    deviceId: id
+                        ? { exact: id }
+                        : undefined
+                }
 
-    hCtrl._onCarouselChange = (faceEmotions, inEmotion, outEmotion, direction) => {
-        updateInfinityWidget(faceEmotions, inEmotion, outEmotion, direction);
-        updateCarouselLabels(faceEmotions);
-    };
+            });
 
-    eCtrl.onEmotionChange = (emotion, confidence) => {
-        if (carouselActive) return;
-        document.getElementById('expressionName').innerText = emotion.toUpperCase();
-        document.getElementById('confidenceFill').style.width = (confidence * 100) + "%";
-        hCtrl.applyEmotionFilter(emotion, confidence);
-        playEmotionAudio(emotion);
-    };
 
-    eCtrl.startDetection(stream);
+        // =================================================
+        // UM ÚNICO VIDEO PARA TODO O SISTEMA
+        // =================================================
 
-    document.getElementById('carouselToggleBtn').disabled  = false;
-    document.getElementById('landmarksToggleBtn').disabled = false;
-    updateStatus("Holograma Online", "success");
+        const hiddenVideo =
+            document.createElement('video');
+
+
+        hiddenVideo.srcObject =
+            stream;
+
+        hiddenVideo.muted =
+            true;
+
+        hiddenVideo.autoplay =
+            true;
+
+        hiddenVideo.playsInline =
+            true;
+
+        hiddenVideo.style.display =
+            'none';
+
+
+        document.body.appendChild(
+            hiddenVideo
+        );
+
+
+        await hiddenVideo.play();
+
+
+        // =================================================
+        // CARREGA OS CONTROLADORES
+        // =================================================
+
+        const {
+            EmotionController
+        } =
+            await import(
+                './detec_emotion.js'
+            );
+
+
+        const {
+            HologramController
+        } =
+            await import(
+                './control_holo.js'
+            );
+
+
+        // =================================================
+        // CRIA CONTROLADORES
+        // =================================================
+
+        hCtrl =
+            new HologramController();
+
+
+        eCtrl =
+            new EmotionController();
+
+
+        console.log(
+            'EmotionController:',
+            eCtrl
+        );
+
+
+        console.log(
+            'HologramController:',
+            hCtrl
+        );
+
+
+        // =================================================
+        // CANVAS
+        // =================================================
+
+        FACE_IDS.forEach(
+            faceId => {
+
+                const videoEl =
+                    document.getElementById(
+                        faceId
+                    );
+
+
+                if (!videoEl) {
+                    return;
+                }
+
+
+                const canvas =
+                    document.createElement(
+                        'canvas'
+                    );
+
+
+                canvas.width =
+                    300;
+
+                canvas.height =
+                    300;
+
+
+                canvas.id =
+                    faceId +
+                    '_canvas';
+
+
+                canvas.style.cssText =
+                    videoEl.style.cssText;
+
+
+                canvas.className =
+                    videoEl.className;
+
+
+                videoEl.parentNode
+                    .replaceChild(
+                        canvas,
+                        videoEl
+                    );
+
+
+                eCtrl.registerCanvas(
+                    faceId,
+                    canvas,
+                    hiddenVideo
+                );
+            }
+        );
+
+
+        // =================================================
+        // CARROSSEL
+        // =================================================
+
+        hCtrl._onCarouselChange =
+            (
+                faceEmotions,
+                inEmotion,
+                outEmotion,
+                direction
+            ) => {
+
+                updateInfinityWidget(
+                    faceEmotions,
+                    inEmotion,
+                    outEmotion,
+                    direction
+                );
+
+
+                updateCarouselLabels(
+                    faceEmotions
+                );
+            };
+
+
+        // =================================================
+        // EMOÇÕES
+        // =================================================
+
+        eCtrl.onEmotionChange =
+            (
+                emotion,
+                confidence
+            ) => {
+
+                if (carouselActive) {
+                    return;
+                }
+
+
+                document
+                    .getElementById(
+                        'expressionName'
+                    )
+                    .innerText =
+                    emotion.toUpperCase();
+
+
+                document
+                    .getElementById(
+                        'confidenceFill'
+                    )
+                    .style.width =
+                    (
+                        confidence * 100
+                    ) + "%";
+
+
+                hCtrl.applyEmotionFilter(
+                    emotion,
+                    confidence
+                );
+
+
+                playEmotionAudio(
+                    emotion
+                );
+            };
+
+
+        // =================================================
+        // INICIA DETECÇÃO
+        // =================================================
+
+        console.log(
+            'Iniciando detecção...'
+        );
+
+console.log('DEBUG eCtrl =', eCtrl);
+console.log(
+    'DEBUG startDetection =',
+    eCtrl?.startDetection
+);
+        await eCtrl.startDetection(
+            stream,
+            hiddenVideo
+        );
+
+
+        // =================================================
+        // UI
+        // =================================================
+
+        document
+            .getElementById(
+                'carouselToggleBtn'
+            )
+            .disabled =
+            false;
+
+
+        document
+            .getElementById(
+                'landmarksToggleBtn'
+            )
+            .disabled =
+            false;
+
+
+        updateStatus(
+            "Holograma Online",
+            "success"
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            'ERRO AO INICIAR HOLOGRAMA:',
+            error
+        );
+
+
+        updateStatus(
+            "Erro ao iniciar",
+            "danger"
+        );
+    }
 }
 
 // ── Áudio com fade ────────────────────────────────────────────────────────────
