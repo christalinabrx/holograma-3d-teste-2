@@ -1,3 +1,5 @@
+import { HolographicTears } from './holographic_tears.js';
+
 export class EmotionController {
 
     constructor() {
@@ -28,6 +30,14 @@ export class EmotionController {
         this._landmarks = null;
 
         this.showLandmarks = false;
+
+        // =====================================================
+        // SISTEMA PROCEDURAL DE LÁGRIMAS
+       
+
+        this._tears =
+            new HolographicTears();
+         // =====================================================
 
         this.carouselMode = false;
 
@@ -644,51 +654,32 @@ export class EmotionController {
 
         try {
 
-            let detection =
-                null;
+    let detection =
+        null;
 
 
-            // =================================================
-            // COM LANDMARKS
-            // =================================================
+    // =================================================
+    // DETECÇÃO FACIAL COM LANDMARKS
+    // =================================================
 
-            if (this.showLandmarks) {
-
-                detection =
-                    await faceapi
-                        .detectSingleFace(
-                            this.video,
-                            this._faceOptions
-                        )
-                        .withFaceLandmarks(true)
-                        .withFaceExpressions();
+    detection =
+        await faceapi
+            .detectSingleFace(
+                this.video,
+                this._faceOptions
+            )
+            .withFaceLandmarks(true)
+            .withFaceExpressions();
 
 
-                this._landmarks =
-                    detection?.landmarks ||
-                    null;
+    // =================================================
+    // GUARDA OS LANDMARKS SEMPRE
+    // =================================================
 
-            }
+    this._landmarks =
+        detection?.landmarks ||
+        null;
 
-
-            // =================================================
-            // SEM LANDMARKS
-            // =================================================
-
-            else {
-
-                detection =
-                    await faceapi
-                        .detectSingleFace(
-                            this.video,
-                            this._faceOptions
-                        )
-                        .withFaceExpressions();
-
-
-                this._landmarks =
-                    null;
-            }
 
 
             // =================================================
@@ -1116,6 +1107,15 @@ export class EmotionController {
 
             return;
         }
+        
+        // =====================================================
+        // ATUALIZA SISTEMA DE LÁGRIMAS
+        // =====================================================
+
+this._tears.setEmotion(
+    currentEmotion,
+    currentConfidence
+);
 
 
         // =====================================================
@@ -1743,20 +1743,57 @@ export class EmotionController {
         // =====================================================
 
         ctx.drawImage(
+    this._personCanvas,
+    frame.x,
+    frame.y,
+    frame.width,
+    frame.height,
+    drawX,
+    drawY,
+    drawWidth,
+    drawHeight
+);
 
-            this._personCanvas,
+        // =====================================================
+// LÁGRIMAS HOLOGRÁFICAS
+// =====================================================
 
-            frame.x,
-            frame.y,
-            frame.width,
-            frame.height,
+if (
+    this._landmarks &&
+    this._tears
+) {
 
-            drawX,
-            drawY,
-            drawWidth,
-            drawHeight
+    const scaleX =
+        drawWidth /
+        frame.width;
 
-        );
+    const scaleY =
+        drawHeight /
+        frame.height;
+
+
+    this._tears.draw(
+        ctx,
+        this._landmarks.positions,
+        {
+            frameX: frame.x,
+            frameY: frame.y,
+
+            drawX: drawX,
+            drawY: drawY,
+
+            scaleX: scaleX,
+            scaleY: scaleY,
+
+            scale:
+                (
+                    scaleX +
+                    scaleY
+                ) / 2
+        }
+    );
+
+}
     }
 
 
