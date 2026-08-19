@@ -444,227 +444,191 @@ export class EmotionController {
     }
 
 
-    // =========================================================
-    // CABEÇA SEGMENTADA
-    // =========================================================
+  _drawSegmentedHead(ctx, w, h) {
 
-    _drawSegmentedHead(ctx, w, h) {
-
-        if (
-            !this.video ||
-            !this._faceBox ||
-            !this._segmentationMask
-        ) {
-            return;
-        }
-
-
-        const videoW =
-            this.video.videoWidth;
-
-        const videoH =
-            this.video.videoHeight;
-
-
-        if (!videoW || !videoH) {
-            return;
-        }
-
-
-        const face = this._faceBox;
-
-
-        /*
-         * =====================================================
-         * REGIÃO DE INTERESSE DA CABEÇA
-         * =====================================================
-         *
-         * O rosto é nossa referência.
-         *
-         * Não usamos uma elipse.
-         * Não desenhamos o fundo.
-         *
-         * A segmentação decide quais pixels da pessoa
-         * realmente aparecem.
-         *
-         * Esta região inclui:
-         *
-         * - cabelo
-         * - testa
-         * - rosto
-         * - orelhas
-         * - parte superior do pescoço
-         *
-         * mas exclui o corpo.
-         */
-
-        const headX =
-            face.x - face.width * 0.85;
-
-        const headY =
-            face.y - face.height * 1.05;
-
-        const headWidth =
-            face.width * 2.70;
-
-        const headHeight =
-            face.height * 2.60;
-
-
-        /*
-         * =====================================================
-         * COORDENADAS LIMITADAS À CÂMERA
-         * =====================================================
-         */
-
-        const sx =
-            Math.max(0, headX);
-
-        const sy =
-            Math.max(0, headY);
-
-        const ex =
-            Math.min(
-                videoW,
-                headX + headWidth
-            );
-
-        const ey =
-            Math.min(
-                videoH,
-                headY + headHeight
-            );
-
-        const sw = ex - sx;
-        const sh = ey - sy;
-
-
-        if (sw <= 0 || sh <= 0) {
-            return;
-        }
-
-
-        /*
-         * =====================================================
-         * CANVAS DE SAÍDA
-         * =====================================================
-         */
-
-        const out =
-            this._outputCanvas;
-
-        const outCtx =
-            this._outputCtx;
-
-
-        out.width = w;
-        out.height = h;
-
-
-        /*
-         * Tudo começa transparente.
-         */
-        outCtx.clearRect(
-            0,
-            0,
-            w,
-            h
-        );
-
-
-        /*
-         * =====================================================
-         * DESENHA A MÁSCARA DE SEGMENTAÇÃO
-         * =====================================================
-         */
-
-        outCtx.save();
-
-        /*
-         * A máscara é desenhada apenas na região
-         * correspondente à cabeça.
-         *
-         * O formato final NÃO é elíptico.
-         * A silhueta vem dos pixels da segmentação.
-         */
-        outCtx.beginPath();
-
-        outCtx.rect(
-            0,
-            0,
-            w,
-            h
-        );
-
-        outCtx.clip();
-
-
-        /*
-         * Desenha a máscara no tamanho final.
-         */
-        outCtx.drawImage(
-            this._segmentationMask,
-            sx,
-            sy,
-            sw,
-            sh,
-            0,
-            0,
-            w,
-            h
-        );
-
-
-        /*
-         * Mantém somente os pixels da pessoa
-         * identificados pela máscara.
-         */
-        outCtx.globalCompositeOperation =
-            'source-in';
-
-
-        /*
-         * Agora desenhamos a imagem original
-         * exatamente na mesma posição.
-         */
-        outCtx.drawImage(
-            this.video,
-            sx,
-            sy,
-            sw,
-            sh,
-            0,
-            0,
-            w,
-            h
-        );
-
-
-        outCtx.restore();
-
-
-        /*
-         * =====================================================
-         * ENVIA RESULTADO PARA O HOLOGRAMA
-         * =====================================================
-         */
-
-        ctx.save();
-
-        ctx.globalCompositeOperation =
-            'source-over';
-
-        ctx.drawImage(
-            out,
-            0,
-            0,
-            w,
-            h
-        );
-
-        ctx.restore();
+    if (
+        !this.video ||
+        !this._faceBox ||
+        !this._segmentationMask
+    ) {
+        return;
     }
 
+    const videoW = this.video.videoWidth;
+    const videoH = this.video.videoHeight;
+
+    if (!videoW || !videoH) return;
+
+
+    const face = this._faceBox;
+
+
+    // =========================================================
+    // ÁREA DA CABEÇA
+    // =========================================================
+
+    const headX =
+        face.x - face.width * 0.85;
+
+    const headY =
+        face.y - face.height * 1.05;
+
+    const headWidth =
+        face.width * 2.70;
+
+    const headHeight =
+        face.height * 2.60;
+
+
+    const sx = Math.max(0, headX);
+    const sy = Math.max(0, headY);
+
+    const ex = Math.min(
+        videoW,
+        headX + headWidth
+    );
+
+    const ey = Math.min(
+        videoH,
+        headY + headHeight
+    );
+
+    const sw = ex - sx;
+    const sh = ey - sy;
+
+
+    if (sw <= 0 || sh <= 0) return;
+
+
+    // =========================================================
+    // CANVAS TEMPORÁRIO
+    // =========================================================
+
+    const maskCanvas = this._segCanvas;
+    const maskCtx = this._segCtx;
+
+    maskCanvas.width = w;
+    maskCanvas.height = h;
+
+
+    /*
+     * Limpa completamente.
+     */
+    maskCtx.clearRect(
+        0,
+        0,
+        w,
+        h
+    );
+
+
+    /*
+     * Desenha a máscara da pessoa.
+     *
+     * NÃO existe elipse aqui.
+     *
+     * A forma da pessoa vem diretamente
+     * da segmentação.
+     */
+    maskCtx.drawImage(
+        this._segmentationMask,
+        sx,
+        sy,
+        sw,
+        sh,
+        0,
+        0,
+        w,
+        h
+    );
+
+
+    /*
+     * ========================================================
+     * DESENHA A IMAGEM ORIGINAL
+     * ========================================================
+     */
+
+    const personCanvas =
+        document.createElement('canvas');
+
+    personCanvas.width = w;
+    personCanvas.height = h;
+
+    const personCtx =
+        personCanvas.getContext('2d');
+
+
+    personCtx.clearRect(
+        0,
+        0,
+        w,
+        h
+    );
+
+
+    personCtx.drawImage(
+        this.video,
+        sx,
+        sy,
+        sw,
+        sh,
+        0,
+        0,
+        w,
+        h
+    );
+
+
+    /*
+     * ========================================================
+     * APLICA A MÁSCARA
+     * ========================================================
+     */
+
+    personCtx.globalCompositeOperation =
+        'destination-in';
+
+    personCtx.drawImage(
+        maskCanvas,
+        0,
+        0,
+        w,
+        h
+    );
+
+
+    /*
+     * ========================================================
+     * FUNDO PRETO + PESSOA
+     * ========================================================
+     */
+
+    ctx.save();
+
+    ctx.globalCompositeOperation =
+        'source-over';
+
+    ctx.fillStyle =
+        '#000000';
+
+    ctx.fillRect(
+        0,
+        0,
+        w,
+        h
+    );
+
+    ctx.drawImage(
+        personCanvas,
+        0,
+        0,
+        w,
+        h
+    );
+
+    ctx.restore();
+}
 
     // =========================================================
     // LANDMARKS
