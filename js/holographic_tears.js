@@ -2,17 +2,15 @@
 // HOLOGRAPHIC TEARS
 // Sistema procedural de lágrimas holográficas
 //
-// - até 5 lágrimas simultâneas
-// - nascimento aleatório na borda inferior da pálpebra
-// - preferência pelas extremidades externas dos olhos
-// - gotas pequenas e delicadas
-// - crescimento gradual durante o percurso
-// - fluxo orgânico
-// - trajetória adaptada ao contorno da face
-// - lágrimas seguem a curvatura das bochechas
-// - rastros líquidos integrados às gotas
+// - até 3 lágrimas simultâneas
+// - nascimento aleatório na borda da pálpebra inferior
+// - maior concentração nas extremidades externas do olho
+// - evita o centro do olho
+// - formação pequena e suave
+// - gota cresce lentamente durante o fluxo
+// - fluxo orgânico pela bochecha
 // - secagem gradual
-// - brilho holográfico
+// - brilho líquido
 // - sem imagens externas
 // ============================================================
 
@@ -44,7 +42,7 @@ export class HolographicTears {
         // SISTEMA DE LÁGRIMAS
         // =====================================================
 
-        this.maxTears = 5;
+        this.maxTears = 3;
 
         this.tears = [];
 
@@ -55,7 +53,9 @@ export class HolographicTears {
 
         this.spawnTimer = 0;
 
-        this.nextSpawn = 900;
+        this.nextSpawn = 1000;
+
+        this.requestSpawn = false;
 
 
         // =====================================================
@@ -73,37 +73,55 @@ export class HolographicTears {
 
         this.config = {
 
-            // formação da pequena gota
-            formationTime: 1200,
+            // -----------------------------------------------
+            // formação inicial
+            // -----------------------------------------------
 
-            // tempo do percurso
+            formationTime: 1700,
+
+
+            // -----------------------------------------------
+            // tempo de escorrimento
+            // -----------------------------------------------
+
             streamTime: 5600,
 
-            // tempo de secagem
+
+            // -----------------------------------------------
+            // secagem
+            // -----------------------------------------------
+
             fadeTime: 3000,
 
+
+            // -----------------------------------------------
             // distância mínima entre lágrimas
-            minSpawnDistance: 11,
+            // -----------------------------------------------
 
-            // distância mínima percorrida
-            minDistance: 55,
+            minSpawnDistance: 15,
 
-            // distância máxima
-            maxDistance: 125,
 
-            // quanto a lágrima cresce
-            // durante o percurso
-            growth: 0.65
+            // -----------------------------------------------
+            // distância do fluxo
+            // -----------------------------------------------
+
+            minDistance: 35,
+
+            maxDistance: 105,
+
+
+            // -----------------------------------------------
+            // largura máxima da região de nascimento
+            //
+            // 0.0 = canto
+            // 1.0 = centro
+            //
+            // Quanto menor, mais concentrado nas extremidades.
+            // -----------------------------------------------
+
+            outerBias: 0.34
 
         };
-
-
-        // =====================================================
-        // ÚLTIMO LADO UTILIZADO
-        // ajuda a distribuir lágrimas
-        // =====================================================
-
-        this.lastSpawnSide = null;
 
     }
 
@@ -190,7 +208,7 @@ export class HolographicTears {
 
 
         // -----------------------------------------------------
-        // CONTROLE DAS NOVAS LÁGRIMAS
+        // SE NÃO ESTÁ TRISTE
         // -----------------------------------------------------
 
         if (
@@ -204,9 +222,12 @@ export class HolographicTears {
             this.spawnTimer += delta;
 
 
+            // -------------------------------------------------
+            // NOVA LÁGRIMA
+            // -------------------------------------------------
+
             if (
-                this.spawnTimer >=
-                this.nextSpawn
+                this.spawnTimer >= this.nextSpawn
             ) {
 
                 if (
@@ -233,8 +254,8 @@ export class HolographicTears {
 
 
                 this.nextSpawn =
-                    700 -
-                    intensityFactor * 250 +
+                    850 -
+                    intensityFactor * 400 +
                     Math.random() * 800;
 
             }
@@ -259,7 +280,7 @@ export class HolographicTears {
 
 
         // -----------------------------------------------------
-        // REMOVE SECAS
+        // REMOVE LÁGRIMAS SECAS
         // -----------------------------------------------------
 
         this.tears =
@@ -300,9 +321,9 @@ export class HolographicTears {
         }
 
 
-        // =====================================================
-        // LÁGRIMAS DO MESMO OLHO
-        // =====================================================
+        // -----------------------------------------------------
+        // LÁGRIMAS JÁ EXISTENTES NO MESMO OLHO
+        // -----------------------------------------------------
 
         const existing =
             this.tears.filter(
@@ -312,16 +333,10 @@ export class HolographicTears {
 
 
         // =====================================================
-        // POSIÇÃO INICIAL
+        // ESCOLHE O PONTO DE NASCIMENTO
         // =====================================================
 
-        let spawnX =
-            eyePosition.x;
-
-
-        let spawnY =
-            eyePosition.y;
-
+        let startT = 0.5;
 
         let attempts = 0;
 
@@ -331,43 +346,97 @@ export class HolographicTears {
         ) {
 
             // -------------------------------------------------
-            // NÃO USAMOS MAIS UMA DISTRIBUIÇÃO CENTRAL
+            // ESCOLHE UMA DAS DUAS EXTREMIDADES
             //
-            // A posição será corrigida posteriormente
-            // através dos landmarks da pálpebra.
+            // 0 = extremidade esquerda
+            // 1 = extremidade direita
+            //
+            // Em cada nascimento escolhemos aleatoriamente
+            // uma das duas regiões.
             // -------------------------------------------------
 
-            const randomOffset =
-                (
-                    Math.random() -
-                    0.5
-                ) *
-                0.55;
+            const outerSide =
+                Math.random() < 0.5
+                    ? 0
+                    : 1;
 
 
-            spawnX =
-                eyePosition.x +
-                randomOffset *
-                eyePosition.width;
+            // -------------------------------------------------
+            // DISTRIBUIÇÃO NÃO LINEAR
+            //
+            // Math.pow(..., 1.8) concentra os pontos
+            // perto das extremidades.
+            // -------------------------------------------------
+
+            const random =
+                Math.pow(
+                    Math.random(),
+                    1.8
+                );
 
 
-            spawnY =
-                eyePosition.y +
-                Math.random() *
-                eyePosition.height;
+            if (
+                outerSide === 0
+            ) {
+
+                startT =
+                    0.05 +
+                    random *
+                    this.config.outerBias;
+
+            } else {
+
+                startT =
+                    1.0 -
+                    (
+                        0.05 +
+                        random *
+                        this.config.outerBias
+                    );
+
+            }
+
+
+            // -------------------------------------------------
+            // VERIFICA DISTÂNCIA
+            // -------------------------------------------------
+
+            const candidate =
+                this.getLowerPoint(
+                    eyePosition.lower,
+                    startT
+                );
 
 
             const tooClose =
                 existing.some(
                     other => {
 
+                        if (
+                            other.startT ===
+                            undefined
+                        ) {
+
+                            return false;
+
+                        }
+
+
+                        const otherPoint =
+                            this.getLowerPoint(
+                                eyePosition.lower,
+                                other.startT
+                            );
+
+
                         const dx =
-                            other.x -
-                            spawnX;
+                            otherPoint.x -
+                            candidate.x;
 
                         const dy =
-                            other.y -
-                            spawnY;
+                            otherPoint.y -
+                            candidate.y;
+
 
                         return (
                             Math.sqrt(
@@ -397,22 +466,23 @@ export class HolographicTears {
 
 
         // =====================================================
-        // CURVATURA
+        // CURVA ALEATÓRIA
         // =====================================================
 
         const direction =
-            side === 'left'
+            Math.random() <
+            0.5
                 ? -1
                 : 1;
 
 
         const curve =
             (
-                5 +
-                Math.random() * 8
+                Math.random() *
+                7 +
+                2
             ) *
-            direction *
-            scale;
+            direction;
 
 
         // =====================================================
@@ -427,8 +497,7 @@ export class HolographicTears {
                     this.config.maxDistance -
                     this.config.minDistance
                 )
-            ) *
-            scale;
+            );
 
 
         // =====================================================
@@ -437,49 +506,67 @@ export class HolographicTears {
 
         this.tears.push({
 
-            // -------------------------------------------------
+            // -----------------------------------------------
             // IDENTIDADE
-            // -------------------------------------------------
+            // -----------------------------------------------
 
             side: side,
 
 
-            // -------------------------------------------------
-            // POSIÇÃO
-            // -------------------------------------------------
+            // -----------------------------------------------
+            // POSIÇÃO DE NASCIMENTO
+            //
+            // É armazenada uma única vez.
+            // -----------------------------------------------
 
-            x: spawnX,
-
-            y: spawnY,
+            startT: startT,
 
 
-            // -------------------------------------------------
+            // -----------------------------------------------
             // TAMANHO INICIAL
             //
-            // bem menor que antes
-            // -------------------------------------------------
+            // BEM PEQUENO.
+            // -----------------------------------------------
 
             size:
                 (
-                    0.38 +
+                    0.42 +
                     Math.random() * 0.30
                 ) *
                 scale,
 
 
-            // -------------------------------------------------
+            // -----------------------------------------------
+            // TAMANHO FINAL
+            //
+            // A lágrima cresce lentamente enquanto escorre.
+            // -----------------------------------------------
+
+            finalSize:
+                (
+                    1.15 +
+                    Math.random() * 0.65
+                ) *
+                scale,
+
+
+            // -----------------------------------------------
             // CURVA
-            // -------------------------------------------------
+            // -----------------------------------------------
 
-            curve: curve,
+            curve:
+                curve *
+                scale,
 
 
-            distance: distance,
+            distance:
+                distance *
+                scale,
 
 
-            // -------------------------------------------------
+            // -----------------------------------------------
             // TEMPO
-            // -------------------------------------------------
+            // -----------------------------------------------
 
             age: 0,
 
@@ -495,8 +582,8 @@ export class HolographicTears {
             streamTime:
                 this.config.streamTime *
                 (
-                    0.75 +
-                    Math.random() * 0.55
+                    0.80 +
+                    Math.random() * 0.50
                 ),
 
 
@@ -504,15 +591,16 @@ export class HolographicTears {
                 this.config.fadeTime *
                 (
                     0.75 +
-                    Math.random() * 0.60
+                    Math.random() * 0.55
                 ),
 
 
-            // -------------------------------------------------
+            // -----------------------------------------------
             // ESTADO
-            // -------------------------------------------------
+            // -----------------------------------------------
 
             phase: 'forming',
+
 
             progress: 0,
 
@@ -521,18 +609,9 @@ export class HolographicTears {
             fadeProgress: 0,
 
 
-            // -------------------------------------------------
-            // CRESCIMENTO
-            // -------------------------------------------------
-
-            growth:
-                0.45 +
-                Math.random() * 0.35,
-
-
-            // -------------------------------------------------
+            // -----------------------------------------------
             // BRILHO
-            // -------------------------------------------------
+            // -----------------------------------------------
 
             shimmer:
                 Math.random() *
@@ -545,26 +624,14 @@ export class HolographicTears {
                 Math.random() * 0.002,
 
 
-            // -------------------------------------------------
-            // MOVIMENTO
-            // -------------------------------------------------
+            // -----------------------------------------------
+            // VARIAÇÃO ORGÂNICA
+            // -----------------------------------------------
 
             curvePhase:
                 Math.random() *
                 Math.PI *
-                2,
-
-
-            // -------------------------------------------------
-            // POSIÇÃO DA PÁLPEBRA
-            // será definida pelo landmark
-            // -------------------------------------------------
-
-            startT:
-                undefined,
-
-            startSegment:
-                undefined
+                2
 
         });
 
@@ -762,46 +829,14 @@ export class HolographicTears {
 
 
             // -------------------------------------------------
-            // DISTRIBUI ENTRE OS OLHOS
+            // ESCOLHE ALEATORIAMENTE O OLHO
             // -------------------------------------------------
 
-            let side;
-
-
-            const leftCount =
-                this.tears.filter(
-                    tear =>
-                        tear.side === 'left'
-                ).length;
-
-
-            const rightCount =
-                this.tears.filter(
-                    tear =>
-                        tear.side === 'right'
-                ).length;
-
-
-            if (
-                leftCount < rightCount
-            ) {
-
-                side = 'left';
-
-            } else if (
-                rightCount < leftCount
-            ) {
-
-                side = 'right';
-
-            } else {
-
-                side =
-                    Math.random() < 0.5
-                        ? 'left'
-                        : 'right';
-
-            }
+            const side =
+                Math.random() <
+                0.5
+                    ? 'left'
+                    : 'right';
 
 
             const eye =
@@ -820,7 +855,7 @@ export class HolographicTears {
 
 
         // =====================================================
-        // BRILHO DOS OLHOS
+        // TRANSFORMA POSIÇÕES
         // =====================================================
 
         const leftPoint =
@@ -836,6 +871,10 @@ export class HolographicTears {
                 transform
             );
 
+
+        // =====================================================
+        // BRILHO ÚMIDO DOS OLHOS
+        // =====================================================
 
         this.drawWetGlow(
             ctx,
@@ -856,7 +895,7 @@ export class HolographicTears {
 
 
         // =====================================================
-        // DESENHA LÁGRIMAS
+        // DESENHA TODAS AS LÁGRIMAS
         // =====================================================
 
         for (
@@ -882,8 +921,7 @@ export class HolographicTears {
                 tear,
                 start.x,
                 start.y,
-                transform.scale,
-                landmarks
+                transform.scale
             );
 
         }
@@ -892,7 +930,7 @@ export class HolographicTears {
 
 
     // =========================================================
-    // POSIÇÃO DO OLHO
+    // ENCONTRA A REGIÃO DO OLHO
     // =========================================================
 
     getEyePosition(
@@ -924,9 +962,9 @@ export class HolographicTears {
         }
 
 
-        // -----------------------------------------------------
-        // BORDA INFERIOR
-        // -----------------------------------------------------
+        // =====================================================
+        // BORDA INFERIOR DA PÁLPEBRA
+        // =====================================================
 
         const lowerIndexes =
             side === 'left'
@@ -952,9 +990,9 @@ export class HolographicTears {
         }
 
 
-        // -----------------------------------------------------
+        // =====================================================
         // CENTRO
-        // -----------------------------------------------------
+        // =====================================================
 
         let centerX = 0;
 
@@ -982,9 +1020,9 @@ export class HolographicTears {
             points.length;
 
 
-        // -----------------------------------------------------
+        // =====================================================
         // DIMENSÕES
-        // -----------------------------------------------------
+        // =====================================================
 
         const minX =
             Math.min(
@@ -1048,13 +1086,83 @@ export class HolographicTears {
 
 
     // =========================================================
-    // PONTO DE NASCIMENTO
-    //
-    // A lágrima nasce na borda inferior do olho.
-    //
-    // IMPORTANTE:
-    // A distribuição é fortemente inclinada para a
-    // extremidade externa do olho.
+    // OBTÉM PONTO DA BORDA INFERIOR
+    // =========================================================
+
+    getLowerPoint(
+        lower,
+        t
+    ) {
+
+        // -----------------------------------------------------
+        // A borda inferior possui dois segmentos:
+        //
+        // 0 → 1
+        // 1 → 2
+        //
+        // Transformamos t de 0..1 para os dois segmentos.
+        // -----------------------------------------------------
+
+        let segment;
+
+        let localT;
+
+
+        if (
+            t < 0.5
+        ) {
+
+            segment = 0;
+
+            localT =
+                t * 2;
+
+        } else {
+
+            segment = 1;
+
+            localT =
+                (
+                    t - 0.5
+                ) * 2;
+
+        }
+
+
+        const a =
+            lower[segment];
+
+
+        const b =
+            lower[segment + 1];
+
+
+        return {
+
+            x:
+                a.x +
+                (
+                    b.x -
+                    a.x
+                ) *
+                localT,
+
+
+            y:
+                a.y +
+                (
+                    b.y -
+                    a.y
+                ) *
+                localT
+
+        };
+
+    }
+
+
+    // =========================================================
+    // PONTO DE NASCIMENTO DA LÁGRIMA
     // =========================================================
 
     getTearStartPoint(
@@ -1063,317 +1171,25 @@ export class HolographicTears {
         transform
     ) {
 
-        const lower =
-            eye.lower;
-
-
         // -----------------------------------------------------
-        // DEFINIMOS O PONTO UMA ÚNICA VEZ
+        // IMPORTANTE:
+        //
+        // O ponto foi sorteado quando a lágrima nasceu.
+        //
+        // Não existe novo sorteio a cada frame.
         // -----------------------------------------------------
 
-        if (
-            tear.startT ===
-            undefined
-        ) {
-
-            // -------------------------------------------------
-            // DISTRIBUIÇÃO NÃO LINEAR
-            //
-            // Math.pow(..., 0.45) concentra os valores
-            // mais próximos da extremidade externa.
-            // -------------------------------------------------
-
-            tear.startT =
-                Math.pow(
-                    Math.random(),
-                    0.45
-                );
-
-
-            // evita o centro absoluto
-
-            tear.startT =
-                0.50 +
-                tear.startT *
-                0.45;
-
-
-            tear.startSegment = 0;
-
-        }
-
-
-        const a =
-            lower[0];
-
-
-        const b =
-            lower[2];
-
-
-        const x =
-            a.x +
-            (
-                b.x -
-                a.x
-            ) *
-            tear.startT;
-
-
-        const y =
-            a.y +
-            (
-                b.y -
-                a.y
-            ) *
-            tear.startT;
+        const point =
+            this.getLowerPoint(
+                eye.lower,
+                tear.startT
+            );
 
 
         return this.transformPoint(
-            {
-                x,
-                y
-            },
+            point,
             transform
         );
-
-    }
-
-
-    // =========================================================
-    // CONSTRÓI O CAMINHO DA LÁGRIMA
-    //
-    // Esta é a parte principal da nova versão.
-    //
-    // A lágrima usa landmarks da mandíbula/bochecha para
-    // construir uma trajetória que acompanha o rosto.
-    // =========================================================
-
-    getFaceTearPath(
-        tear,
-        start,
-        landmarks,
-        transform,
-        scale
-    ) {
-
-        // -----------------------------------------------------
-        // LANDMARKS DA MANDÍBULA
-        //
-        // 0 ---------------- 16
-        //   \              /
-        //    \            /
-        //     \__________/
-        //
-        // Para o lado esquerdo usamos a região 0-6.
-        // Para o lado direito usamos 10-16.
-        // -----------------------------------------------------
-
-        const jawIndexes =
-            tear.side === 'left'
-                ? [0, 1, 2, 3, 4, 5, 6]
-                : [16, 15, 14, 13, 12, 11, 10];
-
-
-        const jaw =
-            jawIndexes
-                .map(
-                    index =>
-                        landmarks[index]
-                )
-                .filter(Boolean);
-
-
-        if (
-            jaw.length < 3
-        ) {
-
-            return [
-                start,
-                {
-                    x:
-                        start.x +
-                        tear.curve,
-
-                    y:
-                        start.y +
-                        tear.distance
-                }
-            ];
-
-        }
-
-
-        // -----------------------------------------------------
-        // ESCOLHE UM PONTO DA BOCHECHA
-        //
-        // Não vamos até o maxilar.
-        //
-        // Pegamos uma região intermediária.
-        // -----------------------------------------------------
-
-        const targetIndex =
-            Math.floor(
-                jaw.length *
-                (
-                    0.40 +
-                    Math.random() *
-                    0.30
-                )
-            );
-
-
-        const target =
-            jaw[
-                Math.min(
-                    targetIndex,
-                    jaw.length - 1
-                )
-            ];
-
-
-        const targetPoint =
-            this.transformPoint(
-                target,
-                transform
-            );
-
-
-        // -----------------------------------------------------
-        // DIREÇÃO EXTERNA
-        //
-        // Faz a lágrima se afastar do centro da face.
-        // -----------------------------------------------------
-
-        const outward =
-            tear.side === 'left'
-                ? -1
-                : 1;
-
-
-        // -----------------------------------------------------
-        // CAMINHO
-        // -----------------------------------------------------
-
-        const points = [];
-
-
-        const segments = 28;
-
-
-        for (
-            let i = 0;
-            i <= segments;
-            i++
-        ) {
-
-            const t =
-                i /
-                segments;
-
-
-            // -------------------------------------------------
-            // EASING VERTICAL
-            // -------------------------------------------------
-
-            const eased =
-                this.easeInOut(t);
-
-
-            // -------------------------------------------------
-            // INTERPOLAÇÃO
-            // -------------------------------------------------
-
-            let px =
-                start.x +
-                (
-                    targetPoint.x -
-                    start.x
-                ) *
-                eased;
-
-
-            let py =
-                start.y +
-                (
-                    targetPoint.y -
-                    start.y
-                ) *
-                eased;
-
-
-            // -------------------------------------------------
-            // CURVATURA PARA O LADO EXTERNO
-            // -------------------------------------------------
-
-            const outwardCurve =
-                Math.sin(
-                    t *
-                    Math.PI
-                ) *
-                (
-                    8 *
-                    scale
-                ) *
-                outward;
-
-
-            px +=
-                outwardCurve;
-
-
-            // -------------------------------------------------
-            // PEQUENA OSCILAÇÃO NATURAL
-            // -------------------------------------------------
-
-            const organic =
-                Math.sin(
-                    t *
-                    Math.PI *
-                    2 +
-                    tear.curvePhase
-                ) *
-                (
-                    1.1 *
-                    scale
-                ) *
-                Math.sin(
-                    t *
-                    Math.PI
-                );
-
-
-            px +=
-                organic;
-
-
-            // -------------------------------------------------
-            // PEQUENA VARIAÇÃO VERTICAL
-            // -------------------------------------------------
-
-            py +=
-                Math.sin(
-                    t *
-                    Math.PI
-                ) *
-                (
-                    1.5 *
-                    scale
-                );
-
-
-            points.push({
-
-                x: px,
-
-                y: py
-
-            });
-
-        }
-
-
-        return points;
 
     }
 
@@ -1531,8 +1347,7 @@ export class HolographicTears {
         tear,
         x,
         y,
-        scale,
-        landmarks
+        scale
     ) {
 
         // =====================================================
@@ -1541,6 +1356,10 @@ export class HolographicTears {
 
         let alpha = 1;
 
+
+        // -----------------------------------------------------
+        // FORMAÇÃO
+        // -----------------------------------------------------
 
         if (
             tear.phase ===
@@ -1554,6 +1373,10 @@ export class HolographicTears {
 
         }
 
+
+        // -----------------------------------------------------
+        // SECAGEM
+        // -----------------------------------------------------
 
         if (
             tear.phase ===
@@ -1609,133 +1432,119 @@ export class HolographicTears {
 
 
         // =====================================================
-        // CAMINHO DA FACE
+        // MOVIMENTO ORGÂNICO
         // =====================================================
 
-        const path =
-            this.getFaceTearPath(
-                tear,
-                {
-                    x,
-                    y
-                },
-                landmarks,
-                {
-                    ...this.currentTransform,
-                    scaleX:
-                        this.currentTransform?.scaleX ||
-                        scale,
-                    scaleY:
-                        this.currentTransform?.scaleY ||
-                        scale
-                },
-                scale
+        const organic =
+            Math.sin(
+                this.time *
+                0.0015 +
+                tear.curvePhase
             );
 
 
-        // -----------------------------------------------------
-        // Se não houver transform armazenado corretamente,
-        // usamos uma trajetória simples.
-        // -----------------------------------------------------
+        const horizontal =
+            tear.curve *
+            Math.sin(
+                flow *
+                Math.PI
+            ) +
+            organic *
+            scale *
+            0.6;
 
-        if (
-            !path ||
-            path.length < 2
-        ) {
 
-            return;
+        const vertical =
+            tear.distance *
+            flow;
 
-        }
+
+        const px =
+            x +
+            horizontal;
+
+
+        const py =
+            y +
+            vertical;
 
 
         // =====================================================
-        // QUANTOS PONTOS MOSTRAR
+        // CRESCIMENTO DA LÁGRIMA
         // =====================================================
 
-        const visibleCount =
-            Math.max(
-                2,
-                Math.floor(
-                    path.length *
+        // Começa pequena.
+        //
+        // Cresce muito lentamente conforme escorre.
+        //
+        // O crescimento é suavizado para não parecer
+        // que a gota simplesmente "aumentou de tamanho".
+
+        const growth =
+            this.easeInOut(
+                Math.min(
+                    1,
                     flow
                 )
             );
 
 
-        const visiblePath =
-            path.slice(
-                0,
-                visibleCount
-            );
-
-
-        if (
-            visiblePath.length < 2
-        ) {
-
-            return;
-
-        }
-
-
-        // =====================================================
-        // TAMANHO DA GOTA
-        //
-        // começa pequena e cresce muito pouco
-        // =====================================================
-
-        const growth =
-            1 +
+        let currentSize =
+            tear.size +
             (
-                tear.growth *
-                flow
-            );
+                tear.finalSize -
+                tear.size
+            ) *
+            growth;
 
 
-        let dropGrow = 1;
-
+        // -----------------------------------------------------
+        // DURANTE A FORMAÇÃO:
+        //
+        // a gota aparece muito delicadamente.
+        // -----------------------------------------------------
 
         if (
             tear.phase ===
             'forming'
         ) {
 
-            dropGrow =
-                Math.sin(
-                    tear.progress *
-                    Math.PI *
-                    0.5
+            const formationGrow =
+                this.easeOut(
+                    tear.progress
+                );
+
+
+            currentSize =
+                tear.size *
+                (
+                    0.15 +
+                    formationGrow * 0.85
                 );
 
         }
 
 
+        // =====================================================
+        // DIMENSÕES
+        // =====================================================
+
         const width =
             (
-                1.0 +
-                tear.size * 0.8
-            ) *
-            growth *
-            dropGrow;
+                1.25 +
+                currentSize * 1.10
+            );
 
 
         const height =
             (
-                2.5 +
-                tear.size * 1.7
-            ) *
-            growth *
-            dropGrow;
-
-
-        const last =
-            visiblePath[
-                visiblePath.length - 1
-            ];
+                3.2 +
+                currentSize * 2.4
+            );
 
 
         // =====================================================
-        // CORPO DA GOTA
+        // CORPO DA LÁGRIMA
         // =====================================================
 
         ctx.save();
@@ -1746,37 +1555,35 @@ export class HolographicTears {
 
 
         const gradient =
-            ctx.createRadialGradient(
-                last.x,
-                last.y,
-                0,
-                last.x,
-                last.y,
-                height * 2.5
+            ctx.createLinearGradient(
+                px - width,
+                py,
+                px + width,
+                py + height
             );
 
 
         gradient.addColorStop(
             0,
-            `rgba(235,250,255,${
-                0.30 * alpha
-            })`
+            `rgba(210,240,255,${0.015 * alpha})`
         );
 
 
         gradient.addColorStop(
-            0.35,
-            `rgba(190,235,255,${
-                0.20 * alpha
-            })`
+            0.30,
+            `rgba(230,248,255,${0.12 * alpha})`
         );
 
 
         gradient.addColorStop(
-            0.70,
-            `rgba(100,190,255,${
-                0.08 * alpha
-            })`
+            0.48,
+            `rgba(170,225,255,${0.26 * alpha})`
+        );
+
+
+        gradient.addColorStop(
+            0.72,
+            `rgba(90,185,255,${0.12 * alpha})`
         );
 
 
@@ -1793,14 +1600,37 @@ export class HolographicTears {
         ctx.beginPath();
 
 
-        ctx.ellipse(
-            last.x,
-            last.y,
-            width,
-            height,
-            0,
-            0,
-            Math.PI * 2
+        ctx.moveTo(
+            px,
+            py
+        );
+
+
+        ctx.bezierCurveTo(
+
+            px - width,
+            py + height * 0.35,
+
+            px - width,
+            py + height * 0.75,
+
+            px,
+            py + height
+
+        );
+
+
+        ctx.bezierCurveTo(
+
+            px + width,
+            py + height * 0.75,
+
+            px + width,
+            py + height * 0.35,
+
+            px,
+            py
+
         );
 
 
@@ -1808,7 +1638,7 @@ export class HolographicTears {
 
 
         // =====================================================
-        // REFLEXO MUITO PEQUENO
+        // REFLEXO
         // =====================================================
 
         const shimmer =
@@ -1823,7 +1653,7 @@ export class HolographicTears {
 
         ctx.fillStyle =
             `rgba(255,255,255,${
-                0.28 *
+                0.30 *
                 shimmer *
                 alpha
             })`;
@@ -1833,26 +1663,29 @@ export class HolographicTears {
 
 
         ctx.ellipse(
-            last.x -
+
+            px -
             width * 0.30,
 
-            last.y -
-            height * 0.20,
+            py +
+            height * 0.28,
 
             Math.max(
-                0.25,
+                0.35,
                 width * 0.16
             ),
 
             Math.max(
-                0.35,
+                0.55,
                 height * 0.16
             ),
 
             -0.3,
 
             0,
+
             Math.PI * 2
+
         );
 
 
@@ -1860,20 +1693,27 @@ export class HolographicTears {
 
 
         // =====================================================
-        // RASTRO
-        //
-        // O rastro passa por baixo da gota e se mistura
-        // gradualmente com ela.
+        // FLUXO
         // =====================================================
 
-        this.drawLiquidTrail(
-            ctx,
-            visiblePath,
-            tear,
-            alpha,
-            scale,
-            flow
-        );
+        if (
+            tear.phase ===
+            'streaming' ||
+            tear.phase ===
+            'fading'
+        ) {
+
+            this.drawLiquidTrail(
+                ctx,
+                x,
+                y + 2 * scale,
+                tear,
+                flow,
+                alpha,
+                scale
+            );
+
+        }
 
 
         ctx.restore();
@@ -1882,23 +1722,100 @@ export class HolographicTears {
 
 
     // =========================================================
-    // RASTRO LÍQUIDO
+    // FLUXO LÍQUIDO
     // =========================================================
 
     drawLiquidTrail(
         ctx,
-        points,
+        x,
+        y,
         tear,
+        progress,
         alpha,
-        scale,
-        flow
+        scale
     ) {
 
+        const distance =
+            tear.distance *
+            progress;
+
+
         if (
-            points.length < 2
+            distance <= 1
         ) {
 
             return;
+
+        }
+
+
+        const points =
+            [];
+
+
+        const segments =
+            40;
+
+
+        // =====================================================
+        // CURVA
+        // =====================================================
+
+        for (
+            let i = 0;
+            i <= segments;
+            i++
+        ) {
+
+            const t =
+                i /
+                segments;
+
+
+            const current =
+                t *
+                distance;
+
+
+            // -------------------------------------------------
+            // CURVA PRINCIPAL
+            // -------------------------------------------------
+
+            const curve =
+                tear.curve *
+                Math.sin(
+                    t *
+                    Math.PI
+                );
+
+
+            // -------------------------------------------------
+            // PEQUENA OSCILAÇÃO
+            // -------------------------------------------------
+
+            const organic =
+                Math.sin(
+                    t *
+                    Math.PI *
+                    2 +
+                    tear.curvePhase
+                ) *
+                0.65 *
+                scale;
+
+
+            points.push({
+
+                x:
+                    x +
+                    curve +
+                    organic,
+
+                y:
+                    y +
+                    current
+
+            });
 
         }
 
@@ -1929,7 +1846,7 @@ export class HolographicTears {
         gradient.addColorStop(
             0,
             `rgba(220,245,255,${
-                0.18 *
+                0.22 *
                 alpha
             })`
         );
@@ -1937,26 +1854,26 @@ export class HolographicTears {
 
         gradient.addColorStop(
             0.25,
-            `rgba(180,230,255,${
-                0.14 *
+            `rgba(170,225,255,${
+                0.18 *
                 alpha
             })`
         );
 
 
         gradient.addColorStop(
-            0.55,
-            `rgba(120,200,255,${
-                0.10 *
+            0.60,
+            `rgba(100,190,255,${
+                0.11 *
                 alpha
             })`
         );
 
 
         gradient.addColorStop(
-            0.80,
-            `rgba(90,180,255,${
-                0.06 *
+            0.85,
+            `rgba(80,170,255,${
+                0.05 *
                 alpha
             })`
         );
@@ -1964,7 +1881,7 @@ export class HolographicTears {
 
         gradient.addColorStop(
             1,
-            `rgba(70,160,255,0)`
+            'rgba(70,160,255,0)'
         );
 
 
@@ -1972,26 +1889,31 @@ export class HolographicTears {
             gradient;
 
 
-        // -----------------------------------------------------
-        // RASTRO FINO
-        // -----------------------------------------------------
+        // =====================================================
+        // ESPESSURA CRESCENTE
+        // =====================================================
+
+        // A trilha começa quase invisível.
+        //
+        // Conforme a lágrima percorre a bochecha,
+        // fica um pouco mais espessa.
+
+        const trailGrowth =
+            0.45 +
+            progress * 0.75;
+
 
         ctx.lineWidth =
             (
-                0.40 +
+                0.45 +
                 tear.size *
-                0.16 +
-                flow *
-                0.12
+                0.20
             ) *
+            trailGrowth *
             scale;
 
 
         ctx.lineCap =
-            'round';
-
-
-        ctx.lineJoin =
             'round';
 
 
@@ -2004,47 +1926,26 @@ export class HolographicTears {
         );
 
 
-        // =====================================================
-        // SUAVIZA O CAMINHO
-        // =====================================================
-
         for (
             let i = 1;
-            i < points.length - 1;
+            i < points.length;
             i++
         ) {
 
-            const current =
-                points[i];
-
-
-            const next =
-                points[i + 1];
-
-
-            const midX =
-                (
-                    current.x +
-                    next.x
-                ) * 0.5;
-
-
-            const midY =
-                (
-                    current.y +
-                    next.y
-                ) * 0.5;
-
-
-            ctx.quadraticCurveTo(
-                current.x,
-                current.y,
-                midX,
-                midY
+            ctx.lineTo(
+                points[i].x,
+                points[i].y
             );
 
         }
 
+
+        ctx.stroke();
+
+
+        // =====================================================
+        // GOTA NA PONTA
+        // =====================================================
 
         const last =
             points[
@@ -2052,27 +1953,22 @@ export class HolographicTears {
             ];
 
 
-        ctx.lineTo(
-            last.x,
-            last.y
-        );
+        // -----------------------------------------------------
+        // A ponta também cresce lentamente.
+        // -----------------------------------------------------
 
-
-        ctx.stroke();
-
-
-        // =====================================================
-        // PEQUENO BRILHO NA PONTA
-        // =====================================================
-
-        const tipAlpha =
-            0.22 *
-            alpha;
+        const dropRadius =
+            (
+                0.45 +
+                progress * 0.85
+            ) *
+            scale;
 
 
         ctx.fillStyle =
             `rgba(255,255,255,${
-                tipAlpha
+                0.26 *
+                alpha
             })`;
 
 
@@ -2083,13 +1979,8 @@ export class HolographicTears {
             last.x,
             last.y,
             Math.max(
-                0.35,
-                (
-                    0.55 +
-                    tear.size *
-                    0.15
-                ) *
-                scale
+                0.45,
+                dropRadius
             ),
             0,
             Math.PI * 2
