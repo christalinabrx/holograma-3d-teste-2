@@ -177,29 +177,34 @@ export class EmotionController {
     // INICIA O SISTEMA
     // =========================================================
 
-    async startDetection(stream) {
+    async startDetection(
+    stream,
+    existingVideo = null
+) {
 
-        /*
-         * Impede inicialização duplicada.
-         */
+    if (this.active) {
 
-        if (this.active) {
+        console.warn(
+            'startDetection chamado novamente. Ignorando.'
+        );
 
-            console.warn(
-                'startDetection chamado novamente. Ignorando.'
-            );
-
-            return;
-        }
+        return;
+    }
 
 
-        // =====================================================
-        // CRIA VÍDEO
-        // =====================================================
+    /*
+     * Usa o mesmo vídeo criado pelo main.js.
+     */
+
+    if (existingVideo) {
+
+        this.video =
+            existingVideo;
+
+    } else {
 
         this.video =
             document.createElement('video');
-
 
         this.video.autoplay = true;
 
@@ -207,90 +212,75 @@ export class EmotionController {
 
         this.video.playsInline = true;
 
-        this.video.srcObject = stream;
-
+        this.video.srcObject =
+            stream;
 
         await this.video.play();
-
-
-        /*
-         * Espera dimensões reais.
-         */
-
-        await new Promise(
-            (resolve) => {
-
-                if (
-                    this.video.videoWidth > 0 &&
-                    this.video.videoHeight > 0
-                ) {
-
-                    resolve();
-
-                    return;
-                }
-
-
-                this.video.onloadedmetadata =
-                    () => resolve();
-            }
-        );
-
-
-        const videoW =
-            this.video.videoWidth;
-
-        const videoH =
-            this.video.videoHeight;
-
-
-        console.log(
-            `Câmera inicializada: ${videoW}x${videoH}`
-        );
-
-
-        // =====================================================
-        // CANVAS AUXILIAR
-        // =====================================================
-
-        this._maskCanvas.width =
-            videoW;
-
-        this._maskCanvas.height =
-            videoH;
-
-
-        this._personCanvas.width =
-            videoW;
-
-        this._personCanvas.height =
-            videoH;
-
-
-        // =====================================================
-        // PRIMEIRO MEDIAPIPE
-        // =====================================================
-
-        await this._initSegmentation();
-
-
-        /*
-         * =====================================================
-         * ATIVA SISTEMA
-         * =====================================================
-         */
-
-        this.active = true;
-
-
-        /*
-         * =====================================================
-         * COMEÇA APENAS UM LOOP PRINCIPAL
-         * =====================================================
-         */
-
-        this._processFrame();
     }
+
+
+    await new Promise(
+        (resolve) => {
+
+            if (
+                this.video.videoWidth > 0 &&
+                this.video.videoHeight > 0
+            ) {
+
+                resolve();
+
+                return;
+            }
+
+
+            this.video.onloadedmetadata =
+                () => resolve();
+        }
+    );
+
+
+    const videoW =
+        this.video.videoWidth;
+
+    const videoH =
+        this.video.videoHeight;
+
+
+    console.log(
+        `Câmera inicializada: ${videoW}x${videoH}`
+    );
+
+
+    this._maskCanvas.width =
+        videoW;
+
+    this._maskCanvas.height =
+        videoH;
+
+
+    this._personCanvas.width =
+        videoW;
+
+    this._personCanvas.height =
+        videoH;
+
+
+    /*
+     * MediaPipe primeiro.
+     */
+
+    await this._initSegmentation();
+
+
+    this.active = true;
+
+
+    /*
+     * Depois começa o pipeline.
+     */
+
+    this._processFrame();
+}
 
 
     // =========================================================
