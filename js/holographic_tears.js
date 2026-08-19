@@ -122,136 +122,132 @@ export class HolographicTears {
     // ATUALIZA UM OLHO
     // =========================================================
 
-    updateEye(
-        eye,
-        delta
+   updateEye(
+    eye,
+    delta
+) {
+
+    // =====================================================
+    // UMIDADE DO OLHO
+    // =====================================================
+
+    const targetWetness =
+        this.intensity * 0.95;
+
+
+    eye.wetness +=
+        (
+            targetWetness -
+            eye.wetness
+        ) * 0.08;
+
+
+    // =====================================================
+    // NÃO ESTÁ TRISTE
+    // =====================================================
+
+    if (
+        this.intensity < 0.03
     ) {
 
-        const targetWetness =
-            this.intensity * 0.9;
+        eye.forming = false;
+
+        eye.stream = false;
+
+        eye.progress = 0;
+
+        eye.streamProgress = 0;
+
+        return;
+    }
 
 
-        eye.wetness +=
-            (
-                targetWetness -
-                eye.wetness
-            ) * 0.035;
+    // =====================================================
+    // LÁGRIMA APARECE IMEDIATAMENTE
+    //
+    // Temporariamente removemos o sorteio e o atraso.
+    // Depois que confirmarmos que está funcionando,
+    // voltamos a colocar o comportamento orgânico.
+    // =====================================================
+
+    if (
+        !eye.forming &&
+        !eye.stream
+    ) {
+
+        eye.forming = true;
+
+        eye.progress = 0;
+
+    }
+
+
+    // =====================================================
+    // FORMAÇÃO DA GOTA
+    // =====================================================
+
+    if (
+        eye.forming
+    ) {
+
+        eye.progress +=
+            delta / 1800;
 
 
         if (
-            this.intensity < 0.05
+            eye.progress >= 1
         ) {
+
+            eye.progress = 1;
 
             eye.forming = false;
 
-            eye.stream = false;
 
-            return;
-
-        }
-
-
-        eye.nextTear -= delta;
-
-
-        // -----------------------------------------------------
-        // COMEÇA UMA NOVA LÁGRIMA
-        // -----------------------------------------------------
-
-        if (
-            !eye.forming &&
-            !eye.stream &&
-            eye.nextTear <= 0
-        ) {
+            // =================================================
+            // COMEÇA A ESCORRER
+            // =================================================
 
             if (
-                Math.random() <
-                this.intensity
+                this.intensity > 0.45
             ) {
 
-                eye.forming = true;
+                eye.stream = true;
 
-                eye.progress = 0;
-
-            }
-
-
-            eye.nextTear =
-                3500 +
-                Math.random() * 5000;
-
-        }
-
-
-        // -----------------------------------------------------
-        // FORMAÇÃO
-        // -----------------------------------------------------
-
-        if (
-            eye.forming
-        ) {
-
-            eye.progress +=
-                delta / 1800;
-
-
-            if (
-                eye.progress >= 1
-            ) {
-
-                eye.progress = 1;
-
-                eye.forming = false;
-
-
-                // tristeza mais intensa
-                // pode fazer a lágrima escorrer
-
-                if (
-                    this.intensity > 0.55 &&
-                    Math.random() < 0.70
-                ) {
-
-                    eye.stream = true;
-
-                    eye.streamProgress = 0;
-
-                }
-
-            }
-
-        }
-
-
-        // -----------------------------------------------------
-        // FLUXO
-        // -----------------------------------------------------
-
-        if (
-            eye.stream
-        ) {
-
-            eye.streamProgress +=
-                delta /
-                (
-                    5000 +
-                    this.intensity * 2500
-                );
-
-
-            if (
-                eye.streamProgress >= 1
-            ) {
-
-                eye.streamProgress = 1;
-
-                eye.stream = false;
+                eye.streamProgress = 0;
 
             }
 
         }
 
     }
+
+
+    // =====================================================
+    // FLUXO DA LÁGRIMA
+    // =====================================================
+
+    if (
+        eye.stream
+    ) {
+
+        eye.streamProgress +=
+            delta /
+            6000;
+
+
+        if (
+            eye.streamProgress >= 1
+        ) {
+
+            eye.streamProgress = 1;
+
+            eye.stream = false;
+
+        }
+
+    }
+
+}
 
 
     // =========================================================
